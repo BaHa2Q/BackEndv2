@@ -1,0 +1,31 @@
+{
+  "name": "node_oracle_typeorm_example",
+  "version": "1.0.0",
+  "main": "app.js",
+  "scripts": {
+    "start": "nodemon index.js"
+  },
+  "dependencies": {
+    "@twurple/api": "^7.3.0",
+    "@twurple/auth": "^7.3.0",
+    "@twurple/easy-bot": "^7.3.0",
+    "@twurple/eventsub-ws": "^7.3.0",
+    "@twurple/pubsub": "^7.4.0",
+    "axios": "^1.10.0",
+    "cors": "^2.8.5",
+    "express": "^4.21.2",
+    "ioredis": "^5.6.1",
+    "jsonwebtoken": "^9.0.2",
+    "luxon": "^3.7.1",
+    "nodemon": "^3.1.10",
+    "oracledb": "^6.8.0",
+    "p-limit": "^6.2.0",
+    "reflect-metadata": "^0.1.14",
+    "socket.io": "^4.8.1",
+    "typeorm": "^0.3.25"
+  },
+  "devDependencies": {
+    "concurrently": "^9.2.0",
+    "multer": "^2.0.2"
+  }
+}
