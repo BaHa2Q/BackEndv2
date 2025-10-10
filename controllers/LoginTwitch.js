@@ -98,7 +98,7 @@ const callbackKick = async (req, res) => {
     params.append("grant_type", "authorization_code");
     params.append("client_id", CLIENT_ID);
     params.append("client_secret", CLIENT_SECRET);
-    params.append("redirect_uri", REDIRECT_URI);
+    params.append("redirect_uri", redirectUriKick);
     params.append("code_verifier", req.session.code_verifier);
     params.append("code", code);
 
