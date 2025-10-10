@@ -91,6 +91,11 @@ const TwitchMessages = new EntitySchema({
       type: String,
       nullable: true,
       name: "COLOR",
+  },
+    platformId: {
+      type: Number,
+      nullable: true,
+      name: "PLATFORM_ID",
     },
   },
 });

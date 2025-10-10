@@ -25,7 +25,7 @@ const Players = new EntitySchema({
       type: "timestamp",
       nullable: true,
       name: "JOINED_AT",
-    },
+  }
   },
 });
 

@@ -1,8 +1,11 @@
-
 const { MoreThan, MoreThanOrEqual, Between } = require("typeorm");
 const { AppDataSource } = require("../data-source");
 const { default: axios } = require("axios");
 const jwt = require("jsonwebtoken");
+const nodemailer = require("nodemailer");
+const {
+  RecaptchaEnterpriseServiceClient,
+} = require("@google-cloud/recaptcha-enterprise");
 
 const { fetchToken } = require("../utils/Token");
 const { MenuItems } = require("../entities/MenuItemsModel");
@@ -15,27 +18,32 @@ const { UserChannels } = require("../entities/UserChannelsModel");
 const { UserSetting } = require("../entities/UserSettingModel");
 const { StreamDays } = require("../entities/StreamDaysModel");
 const { VwUserSummary } = require("../entities/VwUserSummary");
-const { v4: uuidv4 } = require('uuid');
+const { v4: uuidv4 } = require("uuid");
 
 const { StaticAuthProvider } = require("@twurple/auth");
 const { ApiClient } = require("@twurple/api");
 const { TwitchActivity } = require("../entities/TwitchActivityModel");
-const {TwitchStreaksView } = require("../entities/TwitchStreaksViewModel");
 const { CreateOrUpdateChannel } = require("./CreateChannel");
 const { ViewFavoriteUsers } = require("../entities/ViewFavoriteUsersModel");
-const { isUserLive } = require("./ProfileController");
+const { isUserLive, isUserLiveKick } = require("./ProfileController");
+const { UserFavorite } = require("../entities/UserFavoriteModel");
+const { subscribeToChannel } = require("../routes/twitchWebhookRoute");
 const TWITCH_CLIENT_ID = process.env.TWITCH_CLIENT_ID;
-require('dotenv').config(); // Load environment variables from .env file
+require("dotenv").config(); // Load environment variables from .env file
+
 const getMenu = async (req, res) => {
   try {
     const repo = AppDataSource.getRepository(MenuItems);
+    const { platformId } = req.user;
 
-    // جلب جميع الأوامر النشطة (active = 1)
-    const menu = await repo.find({
-      where: {
-        active: 1,
-      },
-    });
+    let whereCondition = { active: 1 };
+
+    // إذا المنصة رقم 2 فقط، فلتر حسبها
+    if (platformId === 2) {
+      whereCondition.platformId = 2;
+    }
+
+    const menu = await repo.find({ where: whereCondition });
 
     res.status(200).json(menu);
   } catch (err) {
@@ -43,31 +51,61 @@ const getMenu = async (req, res) => {
     res.status(500).send("An error occurred while retrieving command data");
   }
 };
-const getNotifications = async (req, res) => {
-    const channelId = req.user.id;
 
+const getNotifications = async (req, res) => {
+  const channelId = req.user.id;
+const {platformId} = req.user;
   try {
     const repo = AppDataSource.getRepository(NotificationStream);
 
     const events = await repo.find({
-    where: { userId:channelId },
-    order: { startedAt: 'DESC' },
+      where: { userId: channelId,platformId },
+      order: { startedAt: "DESC" },
     });
 
-    const unseenCount = events.filter(e => e.isSeen === 0).length;
+    const unseenCount = events.filter((e) => e.isSeen === 0).length;
 
     res.status(200).json({
-    notifications: events,
-    unseenCount,
+      notifications: events,
+      unseenCount,
     });
   } catch (err) {
     console.error("❌ خطأ أثناء جلب الإشعارات:", err.message);
     res.status(500).json({ error: "فشل جلب الإشعارات" });
   }
-}
+};
+const updateNotifications = async (req, res) => {
+  const { id } = req.params;               // الـ ID جاي من الباراميتر
+  const { notifications } = req.body;      // القيمة الجديدة جاي من الـ body
+       
+    await subscribeToChannel(channelData.id)
+  try {
+    const repo = AppDataSource.getRepository(UserFavorite);
+
+    // التأكد من وجود السجل
+    const favorite = await repo.findOneBy({ id });
+    if (!favorite) {
+      return res.status(404).json({ error: "السجل غير موجود" });
+    }
+
+    // تحديث العمود
+    favorite.notifications = notifications;
+
+    // حفظ التعديلات
+    await repo.save(favorite);
+
+    return res.status(200).json({
+      message: "✅ تم تحديث الإشعارات بنجاح",
+      notifications: favorite.notifications,
+    });
+  } catch (err) {
+    console.error("❌ خطأ أثناء تحديث الإشعارات:", err.message);
+    return res.status(500).json({ error: "فشل تحديث الإشعارات" });
+  }
+};
 const getNotificationsCount = async (req, res) => {
   const channelId = req.user.id;
-
+  const {platformId} = req.user
   if (!channelId) {
     return res.status(400).json({ error: "channelId is required" });
   }
@@ -76,29 +114,35 @@ const getNotificationsCount = async (req, res) => {
     // 🔹 عدّ الإشعارات الغير مقروءة
     const notificationRepo = AppDataSource.getRepository(NotificationStream);
     const unseenCount = await notificationRepo.count({
-      where: { userId: channelId, isSeen: 0 },
+      where: { userId: channelId, isSeen: 0,platformId },
     });
 
     // 🔹 عدّ المفضلين اللي لايف
-    const accessToken = await fetchToken(channelId);
+    const {accessToken,refreshToken,data} = await fetchToken(channelId);
     const favoritesRepo = AppDataSource.getRepository(ViewFavoriteUsers);
 
     let favorites = await favoritesRepo.find({
-      where: { channelId: channelId },
+      where: { channelId: channelId,platformId },
     });
 
     let liveCount = 0;
-    for (const user of favorites) {
-      const liveStatus = await isUserLive(user.userId, accessToken);
+    let liveStatus;
+    for (const user of favorites) {     
+
+        if (platformId === 2) {
+           liveStatus = await isUserLiveKick(user.userId, accessToken,refreshToken,data);
+        }else{
+           liveStatus = await isUserLive(user.userId, accessToken);
+        }
       if (liveStatus?.isLive) {
         liveCount++;
       }
     }
-
+    
+    
     // 🔹 رجع النتيجة
     res.status(200).json({ unseenCount, liveCount });
   } catch (err) {
-    console.error("❌ خطأ أثناء عدّ الإشعارات:", err.message);
     res.status(500).json({ error: "فشل في عدّ الإشعارات" });
   }
 };
@@ -109,10 +153,7 @@ const markNotificationsAsSeen = async (req, res) => {
   try {
     const repo = AppDataSource.getRepository(NotificationStream);
 
-    await repo.update(
-      { userId: channelId, isSeen: 0 },
-      { isSeen: 1 }
-    );
+    await repo.update({ userId: channelId, isSeen: 0 }, { isSeen: 1 });
 
     res.status(200).json({ message: "تم تحديد الإشعارات كمقروءة." });
   } catch (err) {
@@ -123,13 +164,14 @@ const markNotificationsAsSeen = async (req, res) => {
 const getChannelStatus = async (req, res) => {
   const channelId = req.user.id;
   const { active } = req.body; // ممكن يكون undefined لو ما أرسل
+  const {platformId} = req.user;
 
   try {
     const channelsRepo = AppDataSource.getRepository(UserChannels);
     const settingsRepo = AppDataSource.getRepository(UserSetting);
 
     // جلب القناة
-    const channel = await channelsRepo.findOne({ where: { channelId } });
+    const channel = await channelsRepo.findOne({ where: { channelId,platformId } });
     if (!channel) return res.status(404).json({ exists: false });
 
     // تحديث التواريخ لو غير موجود firstJoin و آخر زيارة دائماً
@@ -141,9 +183,9 @@ const getChannelStatus = async (req, res) => {
     await channelsRepo.save(channel);
 
     // جلب أو إنشاء إعدادات القناة
-    let settings = await settingsRepo.findOne({ where: { userId: channelId } });
+    let settings = await settingsRepo.findOne({ where: { userId: channelId ,platformId} });
     if (!settings) {
-      settings = settingsRepo.create({ userId: channelId, isBotActive: 0 });
+      settings = settingsRepo.create({ userId: channelId, isBotActive: 0,platformId });
     }
 
     // إذا أرسلنا active، حدثها
@@ -163,51 +205,7 @@ const getChannelStatus = async (req, res) => {
     res.status(500).send("خطأ في السيرفر");
   }
 };
-const saveNotification = async ({userId,streamId,title,broadcaster,avatar,color}) => {
-  try {
-    const repo = AppDataSource.getRepository(NotificationStream);
 
-    const notification = repo.create({
-      eventId:uuidv4(),
-      userId,
-      streamId,
-      streamTitle:title,
-      broadcasterName: broadcaster,
-      broadcasterAvatar:avatar,
-      color,
-      isSeen: 0,
-      // STARTED_AT يتم تعيينه تلقائيًا بفضل @CreateDateColumn
-    });
-
-    await repo.save(notification);
-    
-    console.log(`✅ Notification saved for ${broadcaster}`);
-  } catch (err) {
-    console.error("❌ Error saving notification to DB:", err.message);
-  }
-};
-const stream_Day = async (stream_id, channel_id, stream_date) => {
-  try {
-    const repo = AppDataSource.getRepository(StreamDays);
-   
-    // تحويل التاريخ فقط للجزء الخاص بالتاريخ (YYYY-MM-DD)
-        const dateObj = new Date(stream_date);
-        dateObj.setHours(0, 0, 0, 0); // لجعل الوقت منتصف الليل فقط
-
-    
-    const streamDay = repo.create({
-      streamId: stream_id,
-      channelId: channel_id,
-      streamDate: dateObj,
-    });
-
-    await repo.save(streamDay);
-
-    console.log(`✅ Stream Day saved for ${channel_id}`);
-  } catch (err) {
-    console.error("❌ Error saving Stream to DB:", err.message);
-  }
-};
 async function getTwitchUser(req, res) {
   const { user_id } = req.query;
   const channelId = req.user.id;
@@ -217,7 +215,7 @@ async function getTwitchUser(req, res) {
   }
 
   try {
-    const accessToken = await fetchToken(channelId);
+    const {accessToken} = await fetchToken(channelId);
 
     const response = await axios.get(
       `https://api.twitch.tv/helix/users?id=${user_id}`,
@@ -242,13 +240,13 @@ async function getTwitchUser(req, res) {
 }
 const getWeeklyActivity = async (req, res) => {
   const channelId = req.user.id;
-
+const {platformId} = req.user;
   try {
     const repo = AppDataSource.getRepository(VwWeeklyActivity);
 
     const events = await repo.find({
-      where: { channelId: channelId },
-      order: { logDate: 'ASC' }
+      where: { channelId: channelId,platformId },
+      order: { logDate: "ASC" },
     });
 
     if (!events || events.length === 0) {
@@ -258,17 +256,17 @@ const getWeeklyActivity = async (req, res) => {
           date_from: null,
           date_to: null,
           total_message_count: 0,
-          total_command_count: 0
-        }
+          total_command_count: 0,
+        },
       });
     }
 
     // daily data (strip extra fields)
-    const daily = events.map(e => ({
+    const daily = events.map((e) => ({
       log_date: e.logDate,
       day: e.day,
       message_count: e.messageCount,
-      command_count: e.commandCount
+      command_count: e.commandCount,
     }));
 
     // take totals from first row (they’re the same in all rows)
@@ -277,38 +275,26 @@ const getWeeklyActivity = async (req, res) => {
       date_from: first.dateFrom,
       date_to: first.dateTo,
       total_message_count: first.totalMessageCount,
-      total_command_count: first.totalCommandCount
+      total_command_count: first.totalCommandCount,
     };
 
     res.status(200).json({ daily, totals });
-
   } catch (err) {
     console.error(err);
-    res.status(500).json({ error: 'Internal server error' });
+    res.status(500).json({ error: "Internal server error" });
   }
 };
-async function getUserColor(userId, apiClient) {
-    try {
 
-        // جلب لون المستخدم في الدردشة
-        const color = await apiClient.chat.getColorForUser(userId);
-        return color; 
-    } catch (err) {
-        console.error('Error fetching user color:', err);
-        return null;
-    }
-}
 const getTopChat = async (req, res) => {
   const channelId = req.user.id;
+  const { platformId } = req.user;
   const { type, day } = req.body;
 
-  // حماية من قيم day كبيرة جدًا لتجنب جلب بيانات ضخمة
   const maxDay = 30;
   const safeDay = Math.min(day || 1, maxDay);
 
-  const accessToken = await fetchToken(channelId);
+  const { accessToken } = await fetchToken(channelId);
 
-  // حساب بداية الفترة
   const startDate = new Date();
   startDate.setHours(0, 0, 0, 0);
   startDate.setDate(startDate.getDate() - safeDay);
@@ -316,137 +302,121 @@ const getTopChat = async (req, res) => {
   try {
     const repo = AppDataSource.getRepository(BotLogs);
 
-    // جلب جميع السجلات لنوع معين من التاريخ المحدد
     const allLogs = await repo.find({
       where: {
         typeid: type,
         channelId: channelId,
         isbot: 0,
         logTimestamp: MoreThanOrEqual(startDate),
+        platformId
       },
     });
-    
-    // جلب رسائل فقط (typeid = 5)
+
     const messageLogs = await repo.find({
       where: {
         typeid: 5,
         channelId: channelId,
         isbot: 0,
         logTimestamp: MoreThanOrEqual(startDate),
+        platformId
       },
     });
 
-    // جلب أوامر فقط (typeid = 10)
     const commandLogs = await repo.find({
       where: {
         typeid: 10,
         channelId: channelId,
         isbot: 0,
         logTimestamp: MoreThanOrEqual(startDate),
+        platformId
       },
     });
 
-    // حساب عدد الرسائل لكل مستخدم
+    // حساب أكثر مستخدمين نشاطًا في الرسائل والأوامر
     const messageCountMap = {};
     for (const log of messageLogs) {
       const key = `${log.userid}::${log.username}`;
-      if (!messageCountMap[key]) {
-        messageCountMap[key] = {
-          user_id: log.userid,
-          username: log.username,
-          count: 0,
-          type: "message_count",
-        };
-      }
+      if (!messageCountMap[key]) messageCountMap[key] = { user_id: log.userid, username: log.username, count: 0, type: "message_count" };
       messageCountMap[key].count++;
     }
-    const topUserMessage = Object.values(messageCountMap).sort((a, b) => b.count - a.count)[0];
+    const topUserMessage = Object.values(messageCountMap).sort((a,b)=>b.count - a.count)[0];
 
-    // حساب عدد الأوامر لكل مستخدم
     const commandCountMap = {};
     for (const log of commandLogs) {
       const key = `${log.userid}::${log.username}`;
-      if (!commandCountMap[key]) {
-        commandCountMap[key] = {
-          user_id: log.userid,
-          username: log.username,
-          count: 0,
-          type: "command_count",
-        };
-      }
+      if (!commandCountMap[key]) commandCountMap[key] = { user_id: log.userid, username: log.username, count: 0, type: "command_count" };
       commandCountMap[key].count++;
     }
-    const topUserCommand = Object.values(commandCountMap).sort((a, b) => b.count - a.count)[0];
+    const topUserCommand = Object.values(commandCountMap).sort((a,b)=>b.count - a.count)[0];
 
     // جمع معرفات المستخدمين بدون تكرار
     const userIds = [...new Set(allLogs.map(log => log.userid))];
-
-    // جلب بيانات المستخدمين من Twitch دفعة واحدة (حتى 100 لكل طلب)
-    const chunkSize = 100;
     const userProfiles = {};
-    for (let i = 0; i < userIds.length; i += chunkSize) {
-      const chunk = userIds.slice(i, i + chunkSize);
-      const twitchUsersResponse = await axios.get(
-        `https://api.twitch.tv/helix/users`,
-        {
+
+    if(platformId === 1) {
+      // Twitch
+      const chunkSize = 100;
+      for(let i=0; i<userIds.length; i+=chunkSize){
+        const chunk = userIds.slice(i, i+chunkSize);
+        const twitchUsersResponse = await axios.get(`https://api.twitch.tv/helix/users`, {
           params: { id: chunk },
-          headers: {
-            "Client-ID": TWITCH_CLIENT_ID,
-            Authorization: `Bearer ${accessToken}`,
-          },
+          headers: { "Client-ID": process.env.TWITCH_CLIENT_ID, Authorization: `Bearer ${accessToken}` }
+        });
+        for(const user of twitchUsersResponse.data.data) userProfiles[user.id] = user;
+      }
+    } else if(platformId === 2) {
+      // Kick
+      for(const userId of userIds){
+        try {
+          const response = await axios.get(`https://api.kick.com/private/v1/users/${userId}`, {
+            headers: { Authorization: `Bearer ${accessToken}` }
+          });
+          userProfiles[userId] = response.data?.data?.account?.user || null;
+        } catch(err){
+          userProfiles[userId] = null;
         }
-      );
-      for (const user of twitchUsersResponse.data.data) {
-        userProfiles[user.id] = user;
       }
     }
 
-    // بناء الخريطة مع صور البروفايل وعدد الرسائل
+    // بناء الخريطة مع الصور وعدد الرسائل
     const countMap = {};
-    for (const log of allLogs) {
-      const twitchUser = userProfiles[log.userid];
+    for(const log of allLogs){
+      const userData = userProfiles[log.userid];
       const key = `${log.userid}::${log.username}`;
-      if (!countMap[key]) {
-        countMap[key] = {
-          username: log.username,
-          message_count: 0,
-          profile_image: twitchUser ? twitchUser.profile_image_url : null,
-        };
-      }
+      if(!countMap[key]) countMap[key] = {
+        username: log.username,
+        message_count: 0,
+        profile_image: userData ? (platformId === 1 ? userData.profile_image_url : userData.profile_picture) : null
+      };
       countMap[key].message_count++;
     }
 
-    // ترتيب المستخدمين حسب التفاعل وأخذ أول 5
-    const logsArray = Object.values(countMap)
-      .sort((a, b) => b.message_count - a.message_count)
-      .slice(0, 5);
+    const logsArray = Object.values(countMap).sort((a,b)=>b.message_count - a.message_count).slice(0,5);
 
-    // إرسال الرد
     res.status(200).json({
       logs: logsArray,
-      top1InChat: [topUserCommand, topUserMessage].filter(Boolean),
+      top1InChat: [topUserCommand, topUserMessage].filter(Boolean)
     });
-  } catch (error) {
-    console.error("Error in getTopChat:", error);
+
+  } catch(error){
+    console.error("Error in getTopChat:", error.response?.data || error.message);
     res.status(500).json({ error: "Internal server error" });
   }
 };
 
+
 const getMessageLogs = async (req, res) => {
   const channelId = req.user.id;
   const { type } = req.query;
-
+const {platformId} = req.user;
   try {
     const repo = AppDataSource.getRepository(BotLogs);
 
- 
-   const logs = await repo.find({
-      where: { channelId,typeid:Number(type) },
-      order: { logTimestamp: "DESC" }, 
+    const logs = await repo.find({
+      where: { channelId, typeid: Number(type),platformId },
+      order: { logTimestamp: "DESC" },
       take: 10000,
-
     });
-
 
     res.status(200).json(logs);
   } catch (error) {
@@ -454,48 +424,7 @@ const getMessageLogs = async (req, res) => {
     res.status(500).send("Error fetching message logs");
   }
 };
-async function getLogs2(req, res) {
-  try {
-    const channelId = req.user.id;
-    let { from_date, to_date, page = 1, pageSize = 10 } = req.query;
 
-    const take = parseInt(pageSize, 10);
-    const skip = (parseInt(page, 10) - 1) * take;
-
-    const repo = AppDataSource.getRepository(BotLogsView);
-
-    let whereClause = { channelId };
-
-    // إذا تم تحديد from_date و to_date بشكل صحيح وغير "all" أضف شرط Between
-    if (from_date && from_date !== "all" && to_date && to_date !== "all") {
-      const fromDateObj = new Date(from_date);
-      const toDateObj = new Date(to_date);
-      toDateObj.setHours(23, 59, 59, 999); // Include full day
-      whereClause = {
-        ...whereClause,
-        logTimestamp: Between(fromDateObj, toDateObj),
-      };
-    }
-
-    // الحصول على العدد الكلي
-    const totalCount = await repo.count({
-      where: whereClause,
-    });
-
-    // جلب الـ logs مع pagination
-    const logs = await repo.find({
-      where: whereClause,
-      order: { logTimestamp: "DESC" },
-      skip,
-      take,
-    });
-
-    res.status(200).json({ logs, totalCount });
-  } catch (error) {
-    console.error("Error fetching logs:", error);
-    res.status(500).send("Error fetching logs");
-  }
-}
 
 async function getLogs(req, res) {
   try {
@@ -503,11 +432,10 @@ async function getLogs(req, res) {
 
     const repo = AppDataSource.getRepository(BotLogsView);
 
-
     const logs = await repo.find({
       where: { channelId },
-      order: { logTimestamp: "DESC" }, 
-      take: 10000,                      
+      order: { logTimestamp: "DESC" },
+      take: 10000,
     });
 
     res.status(200).json(logs);
@@ -517,21 +445,18 @@ async function getLogs(req, res) {
   }
 }
 
-
-
 const getChat = async (req, res) => {
   try {
     const channelId = req.user.id;
-    const accessToken = await fetchToken(channelId);
+    const {accessToken} = await fetchToken(channelId);
     const repo = AppDataSource.getRepository(TwitchMessages);
-
-    
+const {platformId} = req.user;
     // الكلمات الممنوعة
-    const spamKeywords = ['huierp.xyz', 'niren88.com', 'qqzy'];
+    const spamKeywords = ["huierp.xyz", "niren88.com", "qqzy"];
 
     // 1. Fetch all messages for the given channel
     const allMessages = await repo.find({
-      where: { channelId },
+      where: { channelId,platformId },
     });
     // 2. Identify spam users
     const spamUsers = new Set();
@@ -551,7 +476,7 @@ const getChat = async (req, res) => {
         userMessageMap.set(msg.userId, {
           user_id: msg.userId,
           username: msg.displayName,
-          color:msg.color,
+          color: msg.color,
           message_count: 1,
         });
       } else {
@@ -593,42 +518,44 @@ const getChat = async (req, res) => {
     // 6. Format final result with profile image
     const formattedResults = sortedUsers.map((user) => {
       const twitchUser = twitchUsersData.find(
-        (u) => u.id === user.user_id?.toString()
+        (u) => u.id === user.user_id?.toString(),platformId
       );
-     
+
       return {
         ...user,
         profile_image_url: twitchUser?.profile_image_url || null,
       };
     });
 
-      
     res.status(200).json({ users: formattedResults });
   } catch (error) {
-    console.error("Error fetching users:", error.response?.data || error.message);
+    console.error(
+      "Error fetching users:",
+      error.response?.data || error.message
+    );
     res.status(500).json({ error: "Failed to fetch users." });
   }
 };
-const getUserMessages = async (req,res) => {
-      const channelId = req.user.id;
-    const { userId } = req.query;
-  try{
-  const repo = AppDataSource.getRepository(TwitchMessages);
+const getUserMessages = async (req, res) => {
+  const channelId = req.user.id;
+  const { userId } = req.query;
+  const {platformId} = req.user;
+  try {
+    const repo = AppDataSource.getRepository(TwitchMessages);
 
-  const messages = await repo.find({
-    where: {
-      channelId: channelId,
-      userId: userId,
-    },
-    order: {
-      messageDate: "DESC",
-    },
-  });
-        res.status(200).json({
+    const messages = await repo.find({
+      where: {
+        channelId: channelId,
+        userId: userId,platformId
+      },
+      order: {
+        messageDate: "DESC",
+      },
+    });
+    res.status(200).json({
       message: messages,
     });
-}
-  catch (error) {
+  } catch (error) {
     console.error("Error fetching message logs:", error);
     res.status(500).send("Error fetching message logs");
   }
@@ -651,7 +578,7 @@ const getTwitchData = async (accessToken, endpoint, params = {}) => {
 const dashboardTotalsHandler = async (req, res) => {
   try {
     const channelId = req.user.id;
-    const accessToken = await fetchToken(channelId);
+   const {accessToken} = await fetchToken(channelId);
 
     // جلب بيانات Twitch API
     const followersData = await getTwitchData(
@@ -714,7 +641,7 @@ const getBitsLeaderboardHandler = async (req, res) => {
     if (isNaN(count) || count < 1) count = 100;
     else if (count > 100) count = 100;
 
-    const accessToken = await fetchToken(channelId);
+    const {accessToken} = await fetchToken(channelId);;
 
     const response = await axios.get(
       "https://api.twitch.tv/helix/bits/leaderboard",
@@ -756,7 +683,7 @@ async function getUserInfo(accessToken, userId) {
 const subscriptionsHandler = async (req, res) => {
   try {
     const channelId = req.user.id;
-    const accessToken = await fetchToken(channelId);
+    const {accessToken} = await fetchToken(channelId);
     const { cursor } = req.query;
 
     const response = await axios.get(
@@ -802,14 +729,25 @@ const subscriptionsHandler = async (req, res) => {
 };
 const eventsHandler = async (req, res) => {
   try {
-    const broadcasterId = req.user.id;
+   const channelId = req.user.id;
+   const {platformId} = req.user;
     const repo = AppDataSource.getRepository(TwitchActivity);
 
-    const events = await repo.find({
-      where: { broadcasterId },
-      relations: ["type"],
-      order: { createdAt: "DESC" },
-    });
+    const events = await repo
+      .createQueryBuilder("a")
+      .leftJoinAndSelect("a.type", "t")
+      .where("a.broadcasterId = :channelId", { channelId })
+      .andWhere("a.platformId = :platformId", { platformId })
+      .select([
+        "a", // كل أعمدة TWITCH_ACTIVITY
+        "t.id",
+        "t.label",
+        "t.color",
+        "t.description",
+      ])
+      .orderBy("a.createdAt", "DESC")
+      .getMany();
+
 
     if (events.length === 0) {
       return res.status(404).send("User not found");
@@ -831,6 +769,8 @@ const eventsHandler = async (req, res) => {
       description: a.type?.description,
       created_at: a.createdAt,
       avatar: a.avatar,
+      note: a.note,
+      displayName: a.displayName,
     }));
 
     res.status(200).json(formattedResults);
@@ -842,7 +782,7 @@ const eventsHandler = async (req, res) => {
 const getClips = async (req, res) => {
   try {
     const channelId = req.user.id;
-    const accessToken = await fetchToken(channelId);
+    const {accessToken} = await fetchToken(channelId);
     const { broadcaster_id } = req.query;
 
     if (!broadcaster_id) {
@@ -883,25 +823,57 @@ const getClips = async (req, res) => {
     res.status(500).json({ error: "Failed to fetch clips." });
   }
 };
+const getUser_Summary = async (req, res) => {
+  const { channelName } = req.params;
+const {platformId} = req.user;
+  if (!channelName) {
+    return res.status(400).send("channelName is required");
+  }
 
-const addBotAsModerator = async (req, res) => {
-  const broadcasterId = req.user.id;
-  const userIdToMod = process.env.TWITCH_BOTID;
-  const ClientId  = process.env.TWITCH_CLIENT_ID
   try {
-    const accessToken = await fetchToken(broadcasterId); // دالة تحصل التوكن
-    const authProvider = new StaticAuthProvider(ClientId, accessToken);
+    const repo = AppDataSource.getRepository(UserChannels);
+    const user = await repo.findOneBy({ nameLogin: channelName,platformId });
+
+    if (!user) {
+      return res.status(404).send("User not found");
+    }
+
+    const repoStreak = AppDataSource.getRepository(VwUserSummary);
+
+    const streaks = await repoStreak.find({
+      where: { channelId: user.channelId ,platformId},
+    });
+    return res.status(200).json(streaks);
+  } catch (error) {
+    console.error("Error fetching streaks:", error);
+    return res.status(503).send("Internal server error");
+  }
+};
+const addBotAsModerator = async (req, res) => {
+ const channelId = req.user.id;
+  const userIdToMod = process.env.TWITCH_BOTID;
+  try {
+    const {accessToken} = await fetchToken(channelId);// دالة تحصل التوكن
+    const authProvider = new StaticAuthProvider(TWITCH_CLIENT_ID, accessToken);
     const apiClient = new ApiClient({ authProvider });
 
     try {
-      await apiClient.moderation.addModerator(broadcasterId, userIdToMod);
-      return res.status(200).json({ success: true });
+      await apiClient.moderation.addModerator(broadcasterId = channelId, userIdToMod);
+
+      // هنا ترجع رسالة واضحة
+      return res.status(200).json({
+        success: true,
+        message: "done",
+      });
     } catch (modError) {
       if (
         modError.statusCode === 400 &&
         modError.message?.includes("user is already a mod")
       ) {
-        return res.status(200).json({ success: true });
+        return res.status(200).json({
+          success: true,
+          message: "done",
+        });
       }
 
       // أي خطأ غير متوقع نرميه
@@ -909,11 +881,16 @@ const addBotAsModerator = async (req, res) => {
     }
   } catch (error) {
     console.error("خطأ أثناء محاولة تعيين المود:", error);
-    return res.status(500).json({ error: error.message || "حدث خطأ غير متوقع" });
+    return res.status(500).json({
+      success: false,
+      message: "❌ حدث خطأ أثناء إعطاء صلاحية Moderator للبوت.",
+      error: error.message || error,
+    });
   }
 };
+
 const firstJoin = async (req, res) => {
-  const channelId = req.user.id; // نفترض أن الـ user موجود في req
+  const channelId = req.user.id; 
 
   try {
     const repo = AppDataSource.getRepository(UserChannels);
@@ -927,11 +904,15 @@ const firstJoin = async (req, res) => {
     if (updateResult.affected > 0) {
       return res.status(200).json({ success: true });
     } else {
-      return res.status(404).json({ success: false, message: "لم يتم العثور على المستخدم" });
+      return res
+        .status(404)
+        .json({ success: false, message: "لم يتم العثور على المستخدم" });
     }
   } catch (error) {
     console.error("خطأ أثناء محاولة تعيين isFirstJoin:", error);
-    return res.status(500).json({ error: error.message || "حدث خطأ غير متوقع" });
+    return res
+      .status(500)
+      .json({ error: error.message || "حدث خطأ غير متوقع" });
   }
 };
 const verifyToken = (req, res) => {
@@ -948,9 +929,12 @@ const validateRes = async (req, res) => {
   const { token } = req.body;
 
   try {
-    const validateRes = await axios.get("https://id.twitch.tv/oauth2/validate", {
-      headers: { Authorization: `OAuth ${token}` },
-    });
+    const validateRes = await axios.get(
+      "https://id.twitch.tv/oauth2/validate",
+      {
+        headers: { Authorization: `OAuth ${token}` },
+      }
+    );
 
     const data = validateRes.data;
 
@@ -1032,78 +1016,127 @@ const refreshTwitchToken = async (req, res) => {
   }
 };
 
-async function updateUserStreak(user_id, user_name, channel_id, stream_date) {
+const searchTwitchUser = async (req, res) => {
+  const { name } = req.query;
+  const ClientId = process.env.TWITCH_CLIENT_ID;
+  const channelId = req.user.id;
+ const {accessToken} = await fetchToken(channelId);
+  const authProvider = new StaticAuthProvider(ClientId, accessToken);
+  const apiClient = new ApiClient({ authProvider });
+
+  if (!name) return res.status(400).json({ error: "Name is required" });
+
   try {
-    if (!stream_date) throw new Error('stream_date is missing or invalid');
+    const results = await apiClient.search.searchChannels(name);
 
-    const dateObj = new Date(stream_date);
-    if (isNaN(dateObj.getTime())) throw new Error('stream_date is not a valid date');
+    const users = results.data.map((user) => ({
+      name: user.displayName,
+      login: user.name,
+      avatar: user.thumbnailUrl,
+    }));
 
-    const formattedDate = dateObj.toISOString().split('T')[0];
-
-    await AppDataSource.query(
-      `BEGIN update_user_streak(:user_id, :user_name, :channel_id, TO_DATE(:stream_date, 'YYYY-MM-DD')); END;`,
-      [user_id, user_name, channel_id, formattedDate]
-    );
-
-    console.log(`✅ تم تحديث الستريك لـ ${user_id}`);
+    res.json(users);
   } catch (err) {
-    console.error(`❌ خطأ أثناء تحديث الستريك لـ ${user_id}:`, err.message);
-  }
-}
-
-const getStreakUser = async (req, res) => {
-  const { channelName } = req.params;
-
-  if (!channelName) {
-    return res.status(400).send("channelName is required");
-  }
-
-  try {
-    const repo = AppDataSource.getRepository(UserChannels);
-    const user = await repo.findOneBy({ nameLogin: channelName });
-
-    if (!user) {
-      return res.status(404).send("User not found");
-    }
-
-    const repoStreak = AppDataSource.getRepository(TwitchStreaksView);
-    const streaks = await repoStreak.find({
-      where: { channelId: user.channelId },
-    });
-
-    return res.status(200).json(streaks);
-  } catch (error) {
-    console.error("Error fetching streaks:", error);
-    return res.status(503).send("Internal server error");
+    console.error(err);
+    res.status(500).json({ error: "Twitch API error" });
   }
 };
-const getUser_Summary = async (req, res) => {
-  const { channelName } = req.params;
 
-  if (!channelName) {
-    return res.status(400).send("channelName is required");
-  }
+// إعداد transporter
+
+// التحقق من reCAPTCHA
+const verifyRecaptcha = async (token) => {
+  const secretKey = "6LdH6tIrAAAAAHo-dWuRvIMh7__J0ZotOdVmlq3E";
+  const url = `https://www.google.com/recaptcha/api/siteverify?secret=${secretKey}&response=${token}`;
 
   try {
-    const repo = AppDataSource.getRepository(UserChannels);
-    const user = await repo.findOneBy({ nameLogin: channelName });
+    const response = await fetch(url, { method: "POST" });
+    const data = await response.json();
 
-    if (!user) {
-      return res.status(404).send("User not found");
-    }
+    // لوق كامل للـ response من Google
+    console.log("reCAPTCHA verification response:", data);
 
-    const repoStreak = AppDataSource.getRepository(VwUserSummary);
-   
-    
-    const streaks = await repoStreak.find({
-      where: { channelId: user.channelId },
-    });
-    return res.status(200).json(streaks);
-  } catch (error) {
-    console.error("Error fetching streaks:", error);
-    return res.status(503).send("Internal server error");
+    return data.success;
+  } catch (err) {
+    console.error("Error verifying reCAPTCHA:", err);
+    return false;
   }
 };
-module.exports ={getMenu,firstJoin,getStreakUser,getUser_Summary,getNotifications,getTwitchUser,refreshTwitchToken,updateUserStreak,getUserColor,stream_Day,getWeeklyActivity,getTopChat,markNotificationsAsSeen,getChannelStatus,addBotAsModerator,verifyToken,validateRes,saveNotification,
-  getMessageLogs,getChat,getUserMessages,dashboardTotalsHandler,getBitsLeaderboardHandler,subscriptionsHandler,eventsHandler ,getClips,getLogs,getNotificationsCount};
+const transporter = nodemailer.createTransport({
+  host: "mail.privateemail.com", // أو mail.yallabots.com حسب الـ DNS
+  port: 465, // أو 465
+  secure: true, // true للـ 465، false للـ 587
+  auth: {
+    user: "support@yallabots.com",
+    pass: "Apex@123#",
+  },
+  tls: { rejectUnauthorized: false }, // مهم للـ TLS على localhost
+});
+
+// مسار POST لإرسال الإيميل
+const sendEmail = async (req, res) => {
+  const { firstName, lastName, email, subject, message, recaptchaToken } =
+    req.body;
+
+  // تحقق من reCAPTCHA
+  const isHuman = await verifyRecaptcha(recaptchaToken);
+  if (!isHuman) {
+    return res
+      .status(400)
+      .json({ success: false, message: "reCAPTCHA verification failed" });
+  }
+
+  // إعداد mailOptions
+  const mailOptions = {
+    from: `"YallaBots Support" <support@yallabots.com>`,
+    to: "support@yallabots.com",
+    subject: subject || "New Contact Form Submission",
+    html: `
+      <h2>New Contact Form Submission</h2>
+      <p><strong>First Name:</strong> ${firstName}</p>
+      <p><strong>Last Name:</strong> ${lastName}</p>
+      <p><strong>Email Address:</strong> ${email}</p>
+      <p><strong>Subject:</strong> ${subject}</p>
+      <p><strong>Message:</strong><br/>${message}</p>
+    `,
+  };
+
+  try {
+    const info = await transporter.sendMail(mailOptions);
+    res.json({ success: true, message: "Email sent successfully!", info });
+  } catch (error) {
+    console.error("Error sending email:", error);
+    res
+      .status(500)
+      .json({ success: false, message: "Failed to send email", error });
+  }
+};
+
+module.exports = {
+  getMenu,
+  sendEmail,
+  searchTwitchUser,
+  getUser_Summary,
+  firstJoin,
+  getNotifications,
+  updateNotifications,
+  getTwitchUser,
+  refreshTwitchToken,
+  getWeeklyActivity,
+  getTopChat,
+  markNotificationsAsSeen,
+  getChannelStatus,
+  addBotAsModerator,
+  verifyToken,
+  validateRes,
+  getMessageLogs,
+  getChat,
+  getUserMessages,
+  dashboardTotalsHandler,
+  getBitsLeaderboardHandler,
+  subscriptionsHandler,
+  eventsHandler,
+  getClips,
+  getLogs,
+  getNotificationsCount,
+};

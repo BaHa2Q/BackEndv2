@@ -67,6 +67,11 @@ const UserSubscriptions = new EntitySchema({
       type: String,
       nullable: false,
       name: "UPDATED_AT",
+  },
+    platformId: {
+      type: Number,
+      nullable: true,
+      name: "PLATFORM_ID",
     },
   },
 });

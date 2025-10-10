@@ -53,6 +53,11 @@ const VwWeeklyActivity = new EntitySchema({
       type: Number,
       nullable: true,
       name: "TOTAL_COMMAND_COUNT",
+  },
+    platformId: {
+      type: Number,
+      nullable: true,
+      name: "PLATFORM_ID",
     },
   },
 });

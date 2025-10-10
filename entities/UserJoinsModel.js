@@ -26,6 +26,11 @@ const UserJoins = new EntitySchema({
       type: "timestamp",
       nullable: true,
       name: "JOIN_DATE",
+  },
+    platformId: {
+      type: Number,
+      nullable: true,
+      name: "PLATFORM_ID",
     },
   },
 });

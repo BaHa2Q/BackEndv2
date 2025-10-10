@@ -55,6 +55,11 @@ const VwUserSummary = new EntitySchema({
       type: Number,
       nullable: false,
       name: "HAS_SUBSCRIPTION",
+  },
+    platformId: {
+      type: Number,
+      nullable: true,
+      name: "PLATFORM_ID",
     },
   },
 });

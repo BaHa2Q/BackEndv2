@@ -42,7 +42,7 @@ const Followers = new EntitySchema({
       type: Number,
       nullable: true,
       name: "NOTFOLLOWNOW",
-    },
+  }
   },
 });
 

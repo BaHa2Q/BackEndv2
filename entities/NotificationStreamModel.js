@@ -34,6 +34,12 @@ const NotificationStream = new EntitySchema({
       nullable: true,
       name: "BROADCASTER_NAME",
     },
+    broadcasterLogin: {
+      type: String,
+      length: 100,
+      nullable: true,
+      name: "BROADCASTER_LOGIN",
+    },
     broadcasterAvatar: {
       type: String,
       length: 255,
@@ -55,6 +61,11 @@ const NotificationStream = new EntitySchema({
       type: Number,
       nullable: true,
       name: "IS_SEEN",
+    },
+    platformId: {
+      type: Number,
+      nullable: false,
+      name: "PLATFORM_ID",
     },
   },
 });

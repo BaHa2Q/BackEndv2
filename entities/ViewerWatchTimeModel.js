@@ -48,6 +48,11 @@ const ViewerWatchTime = new EntitySchema({
       type: String,
       nullable: true,
       name: "LAST_WRITE_DATE",
+  },
+    platformId: {
+      type: Number,
+      nullable: true,
+      name: "PLATFORM_ID",
     },
   },
 });

@@ -35,6 +35,11 @@ const UserSetting = new EntitySchema({
       type: Number,
       nullable: true,
       name: "SHOW_FAVORITES",
+  },
+    platformId: {
+      type: Number,
+      nullable: true,
+      name: "PLATFORM_ID",
     },
   },
 });

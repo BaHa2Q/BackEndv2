@@ -58,6 +58,11 @@ const UserChannels = new EntitySchema({
       type: Number,
       nullable: true,
       name: "ISFIRSTJOIN",
+  },
+    platformId: {
+      type: Number,
+      nullable: true,
+      name: "PLATFORM_ID",
     },
   },
   relations: {

@@ -26,7 +26,8 @@ const CommandDefault = new EntitySchema({
       type: Number,
       nullable: false,
       name: "TPYE_ID",
-    },
+  },
+    
   },
 });
 

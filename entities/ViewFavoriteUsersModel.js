@@ -63,6 +63,22 @@ const ViewFavoriteUsers = new EntitySchema({
       nullable: true,
       name: "TOTAL_FOLLOWERS",
     },
+    createdAt: {
+      type: Date,
+      nullable: true,
+      name: "CREATED_DATE"
+    },
+    notifications: {
+      type: Number,
+      primary: true,
+      nullable: false,
+      name: "NOTIFICATIONS",
+    },
+    platformId: {
+      type: Number,
+      nullable: true,
+      name: "PLATFORM_ID",
+    },
   },
 });
 

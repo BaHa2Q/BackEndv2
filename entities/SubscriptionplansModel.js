@@ -25,6 +25,11 @@ const Subscriptionplans = new EntitySchema({
       type: Number,
       nullable: false,
       name: "PRICE",
+  },
+    platformId: {
+      type: Number,
+      nullable: true,
+      name: "PLATFORM_ID",
     },
   },
 });

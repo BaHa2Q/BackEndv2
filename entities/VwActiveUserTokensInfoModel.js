@@ -51,6 +51,11 @@ const VwActiveUserTokensInfo = new EntitySchema({
       type: Number,
       nullable: true,
       name: "ISJOIN",
+  },
+    platformId: {
+      type: Number,
+      nullable: true,
+      name: "PLATFORM_ID",
     },
   },
 });

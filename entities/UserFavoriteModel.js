@@ -1,4 +1,4 @@
-const { EntitySchema } = require("typeorm");
+const { EntitySchema, Timestamp } = require("typeorm");
 
 const UserFavorite = new EntitySchema({
   name: "UserFavorite",
@@ -68,8 +68,23 @@ const UserFavorite = new EntitySchema({
       nullable: true,
       name: "PRIVATE",
     },
-
-  },
+    notifications: {
+      type: Number,
+      nullable: false,
+      default: 0,
+      name: "NOTIFICATIONS",
+    },
+    createdAt:{
+      type:Date,
+      nullable:true,
+      name:"CREATED_DATE"
+    },
+    platformId: {
+      type: Number,
+      nullable: true,
+      name: "PLATFORM_ID",
+    },
+  }
 });
 
 module.exports = { UserFavorite };

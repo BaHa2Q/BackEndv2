@@ -36,6 +36,11 @@ const BotTokens = new EntitySchema({
       type: "timestamp",
       nullable: true,
       name: "UPDATED_AT",
+  },
+    platformId: {
+      type: Number,
+      nullable: true,
+      name: "PLATFORM_ID",
     },
   },
 });

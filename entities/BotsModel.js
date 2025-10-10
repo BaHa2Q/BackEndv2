@@ -7,15 +7,21 @@ const Bots = new EntitySchema({
     username: {
       type: String,
       length: 255,
-      primary: true,
+  
       nullable: true,
       name: "USERNAME",
     },
     channelId: {
       type: String,
       length: 255,
+          primary: true,
       nullable: false,
       name: "CHANNEL_ID",
+  },
+    platformId: {
+      type: Number,
+      nullable: true,
+      name: "PLATFORM_ID",
     },
   },
 });

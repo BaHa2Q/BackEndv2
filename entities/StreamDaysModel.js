@@ -23,6 +23,11 @@ const StreamDays = new EntitySchema({
       nullable: true,
       name: "CHANNEL_ID",
     },
+    platformId: {
+      type: Number,
+      nullable: false,
+      name: "PLATFORM_ID",
+    },
   },
 });
 

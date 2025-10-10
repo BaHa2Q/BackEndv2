@@ -62,6 +62,11 @@ const Ticket = new EntitySchema({
       type: "timestamp",
       createDate: true,
       name: "CREATED_AT",
+  },
+    platformId: {
+      type: Number,
+      nullable: true,
+      name: "PLATFORM_ID",
     },
   },
   relations: {

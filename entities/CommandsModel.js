@@ -72,6 +72,11 @@ const Commands = new EntitySchema({
       type: Number,
       nullable: true,
       name: "DELAY",
+  },
+    platformId: {
+      type: Number,
+      nullable: true,
+      name: "PLATFORM_ID",
     },
   },
 });

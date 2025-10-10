@@ -79,6 +79,11 @@ const VwAllUserTokensInfo = new EntitySchema({
       nullable: true,
       name: "ISFIRSTJOIN",
     },
+    platformId: {
+      type: Number,
+      nullable: true,
+      name: "PLATFORM_ID",
+    },
   },
 });
 

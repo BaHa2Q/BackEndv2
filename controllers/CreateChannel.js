@@ -9,12 +9,13 @@ const { UserSetting } = require("../entities/UserSettingModel");
 const { subscribeToChannel } = require("../routes/twitchWebhookRoute");
 
 const CreateOrUpdateChannel = async (channelData) => {
+  
+  
   try {
     // 1. القناة
     const channelRepo = AppDataSource.getRepository(UserChannels);
-    const existingChannel = await channelRepo.findOneBy({ channelId: channelData.id });
-        
-    await subscribeToChannel(channelData.id)
+    const existingChannel = await channelRepo.findOneBy({ channelId: channelData.id,platformId:channelData.platformId });
+          
     if (existingChannel) {
       await channelRepo.update(
         { channelId: channelData.id },
@@ -22,56 +23,65 @@ const CreateOrUpdateChannel = async (channelData) => {
           nameLogin: channelData.login,
           displayName: channelData.display_name,
           profileImageUrl: channelData.profile_image_url,
-          email:channelData.email
+          email:channelData.email,
+          platformId:channelData.platformId
         }
       );
     } else {
-      await subscribeToChannel(channelData.id)
       const newChannel = channelRepo.create({
         channelId: channelData.id,
         nameLogin: channelData.login,
         displayName: channelData.display_name,
         profileImageUrl: channelData.profile_image_url,
         email:channelData.email,
-        isFirstJoin:0
-        
+        isFirstJoin:0,
+          platformId:channelData.platformId
       });
       await channelRepo.save(newChannel);
     }
-
+    if (channelData.platformId !== 2) {
+      await subscribeToChannel(channelData.id);
+    }
     // 2. bots
     const botsRepo = AppDataSource.getRepository(Bots);
-    const botsList = ["nightbot", "streamelements", "falkorie", "arabbots"];
-    for (const username of botsList) {
-      const exists = await botsRepo.findOneBy({
-        channelId: channelData.id,
-        username,
-      });
-      if (!exists) {
-        await botsRepo.save(botsRepo.create({ channelId: channelData.id, username }));
-      }
-    }
+    const botsList = ["nightbot", "streamelements", "falkorie", "yallabots"];
+    const botsString = botsList.map(b => b.trim().toLowerCase()).join(":");
 
+    // جلب السجل الحالي للقناة
+    let existingBots = await botsRepo.findOneBy({ channelId: channelData.id,platformId:channelData.platformId });
+
+    // فقط إذا لم يوجد سجل للقناة، نضيفه
+    if (!existingBots) {
+      await botsRepo.save(botsRepo.create({
+        channelId: channelData.id,
+        username: botsString,
+          platformId:channelData.platformId
+      }));
+    }
     // 3. user_tokens
     const tokenRepo = AppDataSource.getRepository(UserTokens);
-    const existingToken = await tokenRepo.findOneBy({ channelId: channelData.id });
+    const existingToken = await tokenRepo.findOneBy({ channelId: channelData.id,platformId:channelData.platformId });
     if (existingToken) {
       await tokenRepo.update(
         { channelId: channelData.id },
         {
           accessToken: channelData.access_token,
           refreshToken: channelData.refresh_token,
+          username:channelData.login,
           scopes: channelData.scopes || '',
           updatedAt: new Date(),
+          platformId:channelData.platformId
         }
       );
     } else {
       await tokenRepo.save(tokenRepo.create({
         channelId: channelData.id,
         accessToken: channelData.access_token,
+        username:channelData.login,
         refreshToken: channelData.refresh_token,
         scopes: channelData.scopes || '',
         updatedAt: new Date(),
+          platformId:channelData.platformId
       }));
     }
 
@@ -103,7 +113,8 @@ const CreateOrUpdateChannel = async (channelData) => {
           channelId: channelData.id,
           configId: row.configId,
           status: row.status,
-          roleId:row.roleId
+          roleId:row.roleId,
+          platformId:channelData.platformId
         }));
       }
       const SettingsRepo = AppDataSource.getRepository(UserSetting);
@@ -113,6 +124,7 @@ const CreateOrUpdateChannel = async (channelData) => {
         isBotActive: 0,
         isNotifyActive: 0,
         isSoundNotify: 0,
+          platformId:channelData.platformId
       }));
 
       // 5. command_config
@@ -145,6 +157,7 @@ const CreateOrUpdateChannel = async (channelData) => {
           defaults: row.defaults,
           typeId: row.typeId,
           roleId: row.roleId,
+          platformId:channelData.platformId
         }));
       }
     }

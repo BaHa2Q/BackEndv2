@@ -37,7 +37,7 @@ const Games = new EntitySchema({
       type: Number,
       nullable: false,
       name: "STATUS",
-    },
+  }
   },
 });
 

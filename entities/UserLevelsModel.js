@@ -42,6 +42,11 @@ const UserLevels = new EntitySchema({
       length: 60,
       nullable: true,
       name: "USERNAME",
+  },
+    platformId: {
+      type: Number,
+      nullable: true,
+      name: "PLATFORM_ID",
     },
   },
 });

@@ -5,14 +5,15 @@ const { CommandTimer } = require("../entities/CommandTimerModel");
 
 const { v4: uuidv4 } = require("uuid");
 const getCommand = async (req, res) => {
-  const channel_id = req.user.id;
+  const channelId = req.user.id;
+  const {platformId} = req.user;
 
   try {
     const repo = AppDataSource.getRepository(Commands);
 
     // جلب جميع الأوامر المرتبطة بـ channel_id
     const commands = await repo.find({
-      where: { channelId: channel_id },
+      where: { channelId: channelId,platformId },
     });
 
     res.status(200).json(commands);
@@ -22,7 +23,7 @@ const getCommand = async (req, res) => {
   }
 };
 const getCommandById = async (req, res) => {
-    const channelId = req.user.id; // user ID as channel ID
+    const channelId = req.user.id;
   const id = req.params.id;
 
   try {
@@ -45,7 +46,7 @@ const getCommandById = async (req, res) => {
 const createCommand = async (req, res) => {
   const channelId = req.user.id;
   const channelName = req.user.login;
-
+  const {platformId} = req.user;
   const {
     id, 
     commandName,
@@ -72,7 +73,7 @@ const createCommand = async (req, res) => {
     const newCommand = commandRepository.create({
       id: id || uuidv4(),
       channelId,
-      channelName,
+      channelName:channelName,
       commandName,
       responseText,
       roleId,
@@ -81,6 +82,7 @@ const createCommand = async (req, res) => {
       createdBy: channelId,
       updatedBy: channelId,
       createdAt: timestamp,
+      platformId
     });
 
     await commandRepository.save(newCommand);
@@ -107,7 +109,7 @@ const updateCommand = async (req, res) => {
     }
 
     // التحديث حسب أسماء الأعمدة الفعلية في قاعدة البيانات أو الكلاس
-    command.channelName = commandName;
+    command.commandName = commandName;
     command.responseText = responseText;
     command.roleId = roleId;
     command.active = active;
@@ -130,11 +132,11 @@ const updateCommand = async (req, res) => {
 const deleteCommand = async (req, res) => {
   const id = req.params.id; // تأكد من التحويل إذا id رقم
   const channelId = req.user.id;
-
+const {platformId} = req.user;
   try {
     const repo = AppDataSource.getRepository(Commands);
     const command = await repo.find({
-      where: { id, channelId },
+      where: { id, channelId,platformId },
     });
 
     if (!command) {
@@ -151,13 +153,8 @@ const deleteCommand = async (req, res) => {
 
 const addTimer = async (req, res) => {
   const channelId = req.user.id;
-const {
-  command,
-  message,
-  intervalMinutes,
-  chatLines,
-  status,
-} = req.body;
+const {command,message,intervalMinutes,chatLines,status} = req.body;
+  const {platformId} = req.user;
 
  
     
@@ -178,7 +175,7 @@ const newTimer = repo.create({
   message,
   intervalMinutes,
   chatLines,
-  status: status ?? 1,
+  status: status ?? 1,platformId
 });
     await repo.save(newTimer);
 
@@ -190,10 +187,10 @@ const newTimer = repo.create({
 };
 const getTimers = async (req, res) => {
   const channelId = req.user.id;
-
+const {platformId} = req.user;
   try {
-    const repo = AppDataSource.getRepository("CommandTimer");
-    const timers = await repo.find({ where: { channelId } });
+    const repo = AppDataSource.getRepository(CommandTimer);
+    const timers = await repo.find({ where: { channelId,platformId } });
 
     res.status(200).json(timers);
   } catch (err) {
@@ -215,7 +212,7 @@ const updateTimer = async (req, res) => {
   } = req.body;
 
   try {
-    const repo = AppDataSource.getRepository("CommandTimer");
+    const repo = AppDataSource.getRepository(CommandTimer);
 
     const timer = await repo.findOneBy({ id: timerId, channelId });
 

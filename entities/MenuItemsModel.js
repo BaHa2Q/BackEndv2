@@ -42,6 +42,11 @@ const MenuItems = new EntitySchema({
       type: Number,
       nullable: true,
       name: "ACTIVE",
+  },
+    platformId: {
+      type: Number,
+      nullable: true,
+      name: "PLATFORM_ID",
     },
   },
 });

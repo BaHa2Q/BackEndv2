@@ -54,6 +54,11 @@ const CommandTimer = new EntitySchema({
       type: String,
       nullable: false,
       name: "CREATED_AT",
+  },
+    platformId: {
+      type: Number,
+      nullable: true,
+      name: "PLATFORM_ID",
     },
   },
 });

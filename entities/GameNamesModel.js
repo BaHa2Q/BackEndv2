@@ -15,7 +15,7 @@ const GameNames = new EntitySchema({
       length: 100,
       nullable: false,
       name: "GAME_NAME",
-    },
+  }
   },
 });
 

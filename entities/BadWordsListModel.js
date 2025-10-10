@@ -4,16 +4,12 @@ const BadWordsList = new EntitySchema({
   name: "BadWordsList",
   tableName: "BAD_WORDS_LIST",
   columns: {
-    id: {
-      type: Number,
-      primary: true,
-      nullable: false,
-      name: "ID",
-    },
-    channelid: {
+
+    channelId: {
       type: String,
       length: 20,
       nullable: false,
+      primary: true,
       name: "CHANNELID",
     },
     words: {
@@ -22,6 +18,12 @@ const BadWordsList = new EntitySchema({
       nullable: true,
       name: "WORDS",
     },
+    platformId: {
+      type: Number,
+      nullable: true,
+      name: "PLATFORM_ID",
+    },
+
   },
 });
 

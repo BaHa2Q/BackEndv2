@@ -38,6 +38,11 @@ const UserStreaks = new EntitySchema({
       type: Number,
       nullable: true,
       name: "PREV_STREAK",
+  },
+    platformId: {
+      type: Number,
+      nullable: true,
+      name: "PLATFORM_ID",
     },
   },
 });

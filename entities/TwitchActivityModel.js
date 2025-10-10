@@ -28,7 +28,7 @@ const TwitchActivityTypes = new EntitySchema({
       length: 500,
       nullable: true,
       name: "DESCRIPTION",
-    },
+  }
   },
   relations: {
     activities: {
@@ -117,6 +117,23 @@ const TwitchActivity = new EntitySchema({
       length: 255,
       nullable: true,
       name: "AVATARS",
+    },
+      note: {
+      type: String,
+      length: 255,
+      nullable: true,
+      name: "NOTE",
+    },
+      displayName: {
+      type: String,
+      length: 255,
+      nullable: true,
+      name: "DISPLAYNAME",
+    },
+    platformId: {
+      type: Number,
+      nullable: true,
+      name: "PLATFORM_ID",
     },
   },
   relations: {

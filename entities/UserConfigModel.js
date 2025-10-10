@@ -26,6 +26,11 @@ const UserConfig = new EntitySchema({
       type: Number,
       nullable: true,
       name: "ROLE_ID",
+  },
+    platformId: {
+      type: Number,
+      nullable: true,
+      name: "PLATFORM_ID",
     },
   },
 });

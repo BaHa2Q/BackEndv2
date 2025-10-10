@@ -4,7 +4,7 @@
 const { UserConfig } = require("../entities/UserConfigModel");
 const { UserFollowed } = require("../entities/UserFollowedModel");
 const getFollowedUsers = async (req, res) => {
-  const channel_id = req.user.id;
+  const channelId = req.user.id;
   const page = parseInt(req.query.page) || 1;
   const limit = parseInt(req.query.limit) || 10;
   const offset = (page - 1) * limit;
@@ -13,7 +13,7 @@ const getFollowedUsers = async (req, res) => {
   try {
     const repo = AppDataSource.getRepository(UserFollowed);
 
-    let whereClause = { channelId: channel_id };
+    let whereClause = { channelId };
     if (isFollowed === '0' || isFollowed === '1' || isFollowed === '2') {
       whereClause.isfollowed = parseInt(isFollowed);
     }
@@ -39,8 +39,9 @@ const getFollowedUsers = async (req, res) => {
 
 const fetchFollowers = async (req, res) => {
   try {
-    const broadcasterId = req.user.id;
-    const accessToken = await fetchToken(broadcasterId);
+    const channelId = req.user.id;
+  const {accessToken} = await fetchToken(channelId);
+    
     const first = parseInt(req.query.first) || 10;
     const after = req.query.after || null;
 
@@ -98,9 +99,8 @@ const fetchFollowers = async (req, res) => {
 
 const fetchAllFollowedUsers = async (req, res) => {
   try {
-    const broadcasterId = req.user.id;
-    const accessToken = await fetchToken(broadcasterId);
-    
+    const channelId = req.user.id;
+    const {accessToken} = await fetchToken(channelId);
     let allFollowedUsers = [];
     let cursor = null;
 
@@ -133,9 +133,8 @@ const fetchAllFollowedUsers = async (req, res) => {
 
 
 const updateFollowedUsers = async (req, res) => {
-  const broadcasterId = req.user.id;
-  const accessToken = await fetchToken(broadcasterId);
-
+  const channelId = req.user.id;
+const {accessToken} = await fetchToken(channelId);
   // تهيئة SSE
   res.setHeader("Content-Type", "text/event-stream");
   res.setHeader("Cache-Control", "no-cache");

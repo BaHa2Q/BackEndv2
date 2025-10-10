@@ -5,9 +5,10 @@ const { AppDataSource } = require("../data-source");
 // إضافة تذكرة
 const addTicket = async (req, res) => {
   try {
-    const userId = req.user.id;
+    const channelId = req.user.id;
     const { department, priority, subject, message, username, email, status } = req.body;
     const files = req.files;
+   const {platformId} = req.user;
 
     const ticketRepo = AppDataSource.getRepository(Ticket);
     const attachmentRepo = AppDataSource.getRepository(Attachment);
@@ -19,7 +20,7 @@ const addTicket = async (req, res) => {
 
       while (exists) {
         ticketId = Math.floor(100000 + Math.random() * 900000).toString(); // 6 أرقام
-        const existing = await ticketRepo.findOne({ where: { ticketId } });
+        const existing = await ticketRepo.findOne({ where: { ticketId,platformId } });
         exists = !!existing;
       }
 
@@ -34,9 +35,10 @@ const addTicket = async (req, res) => {
       subject,
       message,
       username,
-      userId,
+      userId:channelId,
       userEmail: email,
       status: status || "Open",
+      platformId
     });
     await ticketRepo.save(ticket);
 
@@ -62,12 +64,13 @@ const addTicket = async (req, res) => {
 
 // جلب تذاكر المستخدم
 const getTicketById = async (req, res) => {
+  const {platformId} = req.user;
   try {
     const ticketRepo = AppDataSource.getRepository(Ticket);
-    const userId = req.user.id;
+    const channelId = req.user.id;
 
     const tickets = await ticketRepo.find({
-      where: { userId },
+      where: { userId:channelId,platformId },
       relations: ["attachments"],
     });
 

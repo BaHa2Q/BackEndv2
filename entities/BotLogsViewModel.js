@@ -45,6 +45,11 @@ const BotLogsView = new EntitySchema({
       length: 19,
       nullable: true,
       name: "FORMATTED_TIMESTAMP",
+  },
+    platformId: {
+      type: Number,
+      nullable: true,
+      name: "PLATFORM_ID",
     },
   },
 });

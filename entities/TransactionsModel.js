@@ -29,6 +29,11 @@ const Transactions = new EntitySchema({
       type: String,
       nullable: true,
       name: "TRANSACTION_DATE",
+  },
+    platformId: {
+      type: Number,
+      nullable: true,
+      name: "PLATFORM_ID",
     },
   },
 });

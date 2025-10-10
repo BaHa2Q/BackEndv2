@@ -52,7 +52,8 @@ const ExpiredSubscriptions = new EntitySchema({
       type: Number,
       nullable: false,
       name: "ISENDSUB",
-    },
+  },
+   
   },
 });
 

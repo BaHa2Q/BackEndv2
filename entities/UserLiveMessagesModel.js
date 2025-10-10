@@ -35,6 +35,11 @@ const UserLiveMessages = new EntitySchema({
       type: "timestamp",
       nullable: true,
       name: "MESSAGE_DATE",
+  },
+    platformId: {
+      type: Number,
+      nullable: true,
+      name: "PLATFORM_ID",
     },
   },
 });

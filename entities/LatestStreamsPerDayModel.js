@@ -21,7 +21,7 @@ const LatestStreamsPerDay = new EntitySchema({
       type: String,
       nullable: true,
       name: "STARTED_AT",
-    },
+  }
   },
 });
 

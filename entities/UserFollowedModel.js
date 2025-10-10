@@ -50,7 +50,7 @@ const UserFollowed = new EntitySchema({
       type: Number,
       nullable: true,
       name: "ISFOLLOWED",
-    },
+  }
   },
 });
 

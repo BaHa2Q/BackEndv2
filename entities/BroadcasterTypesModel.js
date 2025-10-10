@@ -15,7 +15,7 @@ const BroadcasterTypes = new EntitySchema({
       length: 50,
       nullable: false,
       name: "BROADCASTER_TYPE",
-    },
+  }
   },
 });
 

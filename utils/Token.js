@@ -19,13 +19,25 @@ const getBot_TokenRepo = async () => {
 const fetchToken = async (channelId) => {
   try {
     const repo = await getRepo();
-    const tokenRow = await repo.findOneBy({ channelId: channelId });
-    return tokenRow ? tokenRow.accessToken : null;
+    const tokenRow = await repo.findOneBy({ channelId });
+
+    if (!tokenRow) return null;
+
+    const { accessToken, refreshToken } = tokenRow;
+
+    return {
+      accessToken,
+      refreshToken,
+      data: {
+        ...tokenRow, // كل الحقول بما فيها accessToken و refreshToken
+      },
+    };
   } catch (err) {
     console.error("Error fetching token:", err);
     return null;
   }
 };
+
 
 const fetchBotToken = async (name) => {
   try {

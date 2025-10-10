@@ -55,6 +55,11 @@ const BotLogs = new EntitySchema({
       generated: "uuid",
       nullable: true,
       name: "LOG_ID",
+  },
+    platformId: {
+      type: Number,
+      nullable: true,
+      name: "PLATFORM_ID",
     },
   },
 });

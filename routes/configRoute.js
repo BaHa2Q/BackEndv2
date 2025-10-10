@@ -4,15 +4,17 @@ const router = express.Router();
 const configController = require('../controllers/configController');
 const Ticket = require('../controllers/TicketController');
 const LoginController = require('../controllers/LoginTwitch');
+const refreshKickToken = require('../controllers/refreshKickToken');
 const verify  = require('../utils/auth')
 const upload = multer({ storage: multer.memoryStorage() });
 
 
 const LAHZA_API_KEY = "sk_test_w7bOCcUsAg1WAtI17RQDWW1SHmadKJhdG"; // مفتاح API السري
 const LAHZA_API_URL = "https://api.lahza.io/transaction/initialize"; // نقطة النهاية لإنشاء جلسة دفع
-router.get('/menu', configController.getMenu);
+router.get('/menu',verify, configController.getMenu);
 router.get("/twitch-user", verify, configController.getTwitchUser);
 router.get('/notification',verify, configController.getNotifications);
+router.put("/notification/:id", configController.updateNotifications);
 router.get('/notifications/count',verify, configController.getNotificationsCount);
 router.put("/notifications/markAsSeen", verify, configController.markNotificationsAsSeen);
 router.post("/channel/status", verify, configController.getChannelStatus);
@@ -20,7 +22,9 @@ router.post("/bot/mod", verify, configController.addBotAsModerator);
 router.post("/firstjoin", verify, configController.firstJoin);
 router.get('/topWeek',verify, configController.getWeeklyActivity);
 router.post('/topchat',verify, configController.getTopChat);
-router.get('/twitch/callback', LoginController.LoginTwitch); 
+router.get('/twitch/callback', LoginController.callbackTwitch); 
+router.get('/kick/login', LoginController.LoginKick);
+router.get('/kick/callback', LoginController.callbackKick);
 router.get('/messages', verify, configController.getMessageLogs);
 router.get('/user-chat', verify, configController.getChat);
 router.get('/user-messages', verify, configController.getUserMessages);
@@ -33,10 +37,15 @@ router.get('/clips', verify, configController.getClips);
 router.post("/verify-token", configController.verifyToken);
 router.post("/validate-token", configController.validateRes);
 router.post("/refresh-token", configController.refreshTwitchToken);
-router.get("/streak-leaderboard/:channelName", verify, configController.getUser_Summary);
+router.get("/leaderboard/:channelName", verify, configController.getUser_Summary);
 router.post("/tickets", verify, upload.array("attachments", 10), Ticket.addTicket);
 router.get("/tickets", verify, Ticket.getTicketById);
+router.get("/search-user", verify, configController.searchTwitchUser);
 router.delete("/tickets/:ticketId", verify, Ticket.deleteTicket);
+router.post("/send-email", configController.sendEmail);
+router.get("/check-token" , refreshKickToken.introspectToken)
+router.post("/refresh-token-kick", refreshKickToken.refreshKickToken);
+
 async function createPaymentSession( email) {
   const payload = {
     amount: String(5.0 * 100), // تحويل المبلغ إلى وحدة العملة الفرعية (مثال: سنتات)
@@ -77,7 +86,7 @@ router.post("/create-payment", async (req, res) => {
     // نفترض أن لحظة ترجع رابط الدفع في payment_url
     res.status(200).json({ paymentUrl: paymentSession.data.authorization_url });
   } catch (error) {
-    console.error(error);
+    console.error(error.response?.data || error.message);
     res.status(500).json({ error: error.message || "خطأ في إنشاء الطلب" });
   }
 });

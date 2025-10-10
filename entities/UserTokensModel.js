@@ -17,6 +17,13 @@ const UserTokens = new EntitySchema({
       nullable: false,
       name: "ACCESS_TOKEN",
     },
+    
+    username: {
+      type: String,
+      length: 255,
+      nullable: false,
+      name: "USERNAME",
+    },
     refreshToken: {
       type: String,
       length: 255,
@@ -33,6 +40,11 @@ const UserTokens = new EntitySchema({
       length: 427,
       nullable: true,
       name: "SCOPES",
+  },
+    platformId: {
+      type: Number,
+      nullable: true,
+      name: "PLATFORM_ID",
     },
   },
 });

@@ -15,6 +15,7 @@ router.get('/my-favorite', verify, userController.getMyFavorite);
 router.post('/updatePrivacy', verify, userController.updatePrivacy);
 router.post("/add-favorite", verify, userController.createFavoriteUser);
 router.delete("/delete-favorite", verify, userController.deleteFavoriteUser);
+router.get("/favorite-user", verify, userController.getFavoriteUser);
 router.get("/test", verify, userController.getJoinedChannels);
 
 module.exports = router;

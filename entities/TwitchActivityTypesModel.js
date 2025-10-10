@@ -27,6 +27,16 @@ const TwitchActivityTypes = new EntitySchema({
       length: 200,
       nullable: true,
       name: "DESCRIPTION",
+  },
+    platformId: {
+      type: Number,
+      nullable: true,
+      name: "PLATFORM_ID",
+  },
+    platformId: {
+      type: Number,
+      nullable: true,
+      name: "PLATFORM_ID",
     },
   },
 });

@@ -4,21 +4,20 @@ const { UserChannels } = require("../entities/UserChannelsModel");
 const { UserFavorite } = require("../entities/UserFavoriteModel");
 const { UserSetting } = require("../entities/UserSettingModel");
 const { ViewFavoriteUsers } = require("../entities/ViewFavoriteUsersModel");
-const { VwActiveUserTokensInfo } = require("../entities/VwActiveUserTokensInfoModel");
-const { TwitchActivity } = require("../entities/TwitchActivityModel");
-const { TwitchStreaks } = require("../entities/TwitchStreaksModel");
-const { v4: uuidv4 } = require('uuid');
 
+const { TwitchActivity } = require("../entities/TwitchActivityModel");
 const { fetchToken } = require("../utils/Token");
 const { VwAllUserTokensInfo } = require("../entities/VwAllUserTokensInfoModel");
+const { refreshKickToken, refreshKickAccessToken } = require("./refreshKickToken");
+
 const favoriteCache = new Map(); // المفتاح: channelId ، القيمة: Set من broadcasterIds
 
 const getUserProfile = async (req, res) => {
   try {
     const userId = req.user.id;
-
+    const { platformId } = req.user;
     const repo = AppDataSource.getRepository(VwAllUserTokensInfo);
-    const user = await repo.findOneBy({ channelId: userId });
+    const user = await repo.findOneBy({ channelId: userId, platformId });
 
     if (!user) {
       return res.status(404).send("User not found");
@@ -27,8 +26,7 @@ const getUserProfile = async (req, res) => {
     // محاولة جلب لون الشات
     let color = null;
     try {
-      const accessToken = await fetchToken(userId);
-
+      const { accessToken } = await fetchToken(userId);
       const colorResponse = await axios.get(
         "https://api.twitch.tv/helix/chat/color",
         {
@@ -39,11 +37,8 @@ const getUserProfile = async (req, res) => {
           },
         }
       );
-
       color = colorResponse.data?.data?.[0]?.color || null;
-    } catch (colorError) {
-     
-    }
+    } catch (colorError) {}
 
     // إرسال البيانات
     res.status(200).json({
@@ -51,17 +46,18 @@ const getUserProfile = async (req, res) => {
       login: user.nameLogin,
       display_name: user.displayName,
       profile_image_url: user.profileImageUrl,
-      email:user.email,
+      email: user.email,
       isSubscribed: user.isSubscribed,
       color: color || "#fff",
-      language : user.language,
-      isFirstJoin:user.isFirstJoin
+      language: user.language,
+      isFirstJoin: user.isFirstJoin,
     });
-  } catch (err) {
-    console.error(err);
+  } catch (error) {
+    console.error("Error fetching user profile", error.response?.data || error.message);
     res.status(500).send("Error fetching user profile");
   }
 };
+
 const getAllUserProfiles = async (req, res) => {
   try {
     const repo = AppDataSource.getRepository(UserChannels);
@@ -75,17 +71,16 @@ const getAllUserProfiles = async (req, res) => {
     }));
 
     res.status(200).json(profiles);
-  } catch (err) {
-    console.error("Error fetching profiles:", err);
+  } catch (error) {
+    console.error("Error fetching profiles:", error.response?.data || error.message);
     res.status(500).send("Error fetching profiles");
   }
 };
+
 const getChannelStatus = async (req, res) => {
   const channelId = req.user.id;
-
   try {
     const repo = AppDataSource.getRepository(UserChannels);
-
     const UserChannel = await repo.findOneBy({ channelId: channelId });
 
     if (!UserChannel) {
@@ -100,11 +95,12 @@ const getChannelStatus = async (req, res) => {
       showModal: shouldShowModal,
       active: isActive,
     });
-  } catch (err) {
-    console.error("Error fetching channel status:", err);
+  } catch (error) {
+    console.error("Error fetching channel status:", error.response?.data || error.message);
     res.status(500).send("An error occurred while fetching channel status");
   }
 };
+
 const updateUserLanguage = async (req, res) => {
   try {
     const { language } = req.body;
@@ -120,7 +116,6 @@ const updateUserLanguage = async (req, res) => {
     }
 
     const repo = AppDataSource.getRepository(UserChannels);
-
     let userChannel = await repo.findOne({ where: { channelId } });
 
     if (!userChannel) {
@@ -132,296 +127,463 @@ const updateUserLanguage = async (req, res) => {
     }
 
     await repo.save(userChannel);
-
     return res.status(200).json({ message: "Language updated successfully" });
-  } catch (err) {
-    console.error(err);
-    return res.status(500).json({ error: err.message });
+  } catch (error) {
+    console.error("error Language updated successfully", error.response?.data || error.message);
+    return res.status(500).json({ error: error.response?.data || error.message });
   }
 };
-
-async function isUserLive(userId, accessToken) {
+async function isUserLive(userId, accessToken, platformId) {
   try {
-    const response = await axios.get(
-      `https://api.twitch.tv/helix/streams?user_id=${userId}`,
-      {
-        headers: {
-          "Client-ID": "44w2981dj04apt8a3i1wut80a9oz5a", // Replace with your Twitch Client ID
-          Authorization: `Bearer ${accessToken}`,
-        },
+    if (platformId === 2) {
+      // ================= Kick =================
+      const response = await axios.get(
+        `https://api.kick.com/public/v1/livestreams`,
+        {
+          params: { broadcaster_user_id: userId },
+          headers: { Authorization: `Bearer ${accessToken}` },
+        }
+      );
+
+      const streamData = response.data.data;
+      if (streamData.length > 0) {
+        const startedAt = new Date(streamData[0].started_at);
+        const now = new Date();
+        const diffMs = now - startedAt;
+        const hours = Math.floor(diffMs / (1000 * 60 * 60));
+        const minutes = Math.floor((diffMs % (1000 * 60 * 60)) / (1000 * 60));
+        const seconds = Math.floor((diffMs % (1000 * 60)) / 1000);
+
+        return {
+          isLive: true,
+          title: streamData[0].title,
+          view: streamData[0].viewer_count || 0,
+          startedAt: streamData[0].started_at,
+          duration: `${hours}h ${minutes}m ${seconds}s`,
+        };
       }
-    );
+      return { isLive: false, view: 0, startedAt: null, duration: null };
+    } else {
+      // ================= Twitch =================
+      const response = await axios.get(
+        `https://api.twitch.tv/helix/streams?user_id=${userId}`,
+        {
+          headers: {
+            "Client-ID": process.env.TWITCH_CLIENT_ID,
+            Authorization: `Bearer ${accessToken}`,
+          },
+        }
+      );
 
-    const streamData = response.data.data;
+      const streamData = response.data.data;
+      if (streamData.length > 0) {
+        const startedAt = new Date(streamData[0].started_at);
+        const now = new Date();
+        const diffMs = now - startedAt;
+        const hours = Math.floor(diffMs / (1000 * 60 * 60));
+        const minutes = Math.floor((diffMs % (1000 * 60 * 60)) / (1000 * 60));
+        const seconds = Math.floor((diffMs % (1000 * 60)) / 1000);
 
-    if (streamData.length > 0) {
-      const startedAt = new Date(streamData[0].started_at);
-      const now = new Date();
+        return {
+          isLive: true,
+          title: streamData[0].title,
+          view: streamData[0].viewer_count || 0,
+          startedAt: streamData[0].started_at,
+          duration: `${hours}h ${minutes}m ${seconds}s`,
+        };
+      }
 
-      // فرق الوقت بالميلي ثانية
-      const diffMs = now - startedAt;
-
-      // حول الفرق إلى ساعات/دقايق/ثواني
-      const hours = Math.floor(diffMs / (1000 * 60 * 60));
-      const minutes = Math.floor((diffMs % (1000 * 60 * 60)) / (1000 * 60));
-      const seconds = Math.floor((diffMs % (1000 * 60)) / 1000);
-
-      return {
-        isLive: true,
-        title: streamData[0].title,
-        view: streamData[0].viewer_count,
-        startedAt: streamData[0].started_at,
-        duration: `${hours}h ${minutes}m ${seconds}s`, // المدة الحالية
-      };
+      return { isLive: false, view: 0, startedAt: null, duration: null };
     }
-
-    return {
-      isLive: false,
-      view: 0,
-      startedAt: null,
-      duration: null,
-    };
   } catch (error) {
-    console.error("Error checking user live status:", error);
-    return {
-      isLive: false,
-      view: 0,
-      startedAt: null,
-      duration: null,
-    };
+    console.warn("Error fetching live status Twitch:", error.response?.data || error.message);
+    return { isLive: false, view: 0, startedAt: null, duration: null };
   }
 }
 
 async function getChannelInfo(req, res) {
-  const login = req.query;
+  const login = req.query.login;
+  const { platformId } = req.user;
 
-  if (!login || !login.login) {
-    return res.status(400).send("Login is required");
-  }
+  if (!login) return res.status(400).send("Login is required");
 
-  const channelId = req.user.id;
+  let userDetailsRaw;
+  let color = null;
+  let totalFollowers = null;
+  let channelInfo = null;
+  let liveStatus = null;
+  let userId = null;
 
   try {
-    const accessToken = await fetchToken(channelId);
+    const channelId = req.user.id;
+    const { accessToken } = await fetchToken(channelId);
 
-    // Get user ID from login name
-    const userIdResponse = await axios.get(
-      "https://api.twitch.tv/helix/users",
-      {
-        params: { login: login.login },
-        headers: {
-          Authorization: `Bearer ${accessToken}`,
-          "Client-ID": process.env.TWITCH_CLIENT_ID,
-        },
+    if (platformId === 2) {
+      const userDetailResponseKick = await axios.get(
+        "https://api.kick.com/public/v1/channels",
+        {
+          params: { slug: login },
+          headers: {
+            Authorization: `Bearer ${accessToken}`,
+            "Client-ID": process.env.KICK_CLIENT_ID,
+          },
+        }
+      );
+
+      const userIdKick = userDetailResponseKick.data.data[0]?.broadcaster_user_id;
+
+      const userResponseKick = await axios.get(
+        "https://api.kick.com/public/v1/users",
+        {
+          params: { id: userIdKick },
+          headers: {
+            Authorization: `Bearer ${accessToken}`,
+            "Client-ID": process.env.KICK_CLIENT_ID,
+          },
+        }
+      );
+
+      const userChannelRaw = userDetailResponseKick.data.data[0];
+      if (!userChannelRaw) {
+        return res.status(200).json({ message: "User not found" });
       }
-    );
 
-    const user = userIdResponse.data.data[0];
-    if (!user) {
-      return res.status(404).send("User not found");
-    }
+      const userUserRaw = userResponseKick.data.data[0];
+      userId = userChannelRaw.broadcaster_user_id;
 
-    const userId = user.id;
+      userDetailsRaw = { ...userUserRaw, ...userChannelRaw, login: userChannelRaw.slug };
+      liveStatus = await isUserLive(userIdKick, accessToken, 2);
+    } else {
+      const userIdResponse = await axios.get(
+        "https://api.twitch.tv/helix/users",
+        {
+          params: { login },
+          headers: {
+            Authorization: `Bearer ${accessToken}`,
+            "Client-ID": process.env.TWITCH_CLIENT_ID,
+          },
+        }
+      );
 
-    // Fetch user details again (redundant but kept as per original logic)
-    const userDetailResponse = await axios.get(
-      "https://api.twitch.tv/helix/users",
-      {
-        params: { id: userId },
-        headers: {
-          Authorization: `Bearer ${accessToken}`,
-          "Client-ID": process.env.TWITCH_CLIENT_ID,
-        },
+      const userTwitch = userIdResponse.data.data[0];
+      if (!userTwitch) return res.status(404).send("User not found");
+
+      userId = userTwitch.id;
+
+      const userDetailResponse = await axios.get(
+        "https://api.twitch.tv/helix/users",
+        {
+          params: { id: userId },
+          headers: {
+            Authorization: `Bearer ${accessToken}`,
+            "Client-ID": process.env.TWITCH_CLIENT_ID,
+          },
+        }
+      );
+
+      userDetailsRaw = userDetailResponse.data.data[0];
+
+      try {
+        const colorRes = await axios.get(
+          "https://api.twitch.tv/helix/chat/color",
+          {
+            params: { user_id: userId },
+            headers: {
+              Authorization: `Bearer ${accessToken}`,
+              "Client-ID": process.env.TWITCH_CLIENT_ID,
+            },
+          }
+        );
+        color = colorRes.data.data[0]?.color || null;
+      } catch (error) {
+        console.warn("Chat color fetch failed:", error.response?.data || error.message);
       }
-    );
 
-    const userDetailsRaw = userDetailResponse.data.data[0];
+      try {
+        const followersRes = await axios.get(
+          "https://api.twitch.tv/helix/channels/followers",
+          {
+            params: { broadcaster_id: userId },
+            headers: {
+              Authorization: `Bearer ${accessToken}`,
+              "Client-ID": process.env.TWITCH_CLIENT_ID,
+            },
+          }
+        );
+        totalFollowers = followersRes.data.total;
+      } catch (error) {
+        console.warn("Followers fetch failed:", error.response?.data || error.message);
+      }
 
-    // Fetch optional data
-    let color = null;
-    let totalFollowers = null;
-    let channelInfo = null;
+      try {
+        const channelRes = await axios.get(
+          "https://api.twitch.tv/helix/channels",
+          {
+            params: { broadcaster_id: userId },
+            headers: {
+              Authorization: `Bearer ${accessToken}`,
+              "Client-ID": process.env.TWITCH_CLIENT_ID,
+            },
+          }
+        );
+        channelInfo = channelRes.data.data[0] || null;
+      } catch (error) {
+        console.warn("Channel info fetch failed:", error.response?.data || error.message);
+      }
 
-    try {
-      const colorResponse = await axios.get(
-        "https://api.twitch.tv/helix/chat/color",
-        {
-          params: { user_id: userId },
-          headers: {
-            Authorization: `Bearer ${accessToken}`,
-            "Client-ID": process.env.TWITCH_CLIENT_ID,
-          },
-        }
-      );
-
-      color = colorResponse.data.data[0]?.color || null;
-    } catch (err) {
-      console.warn("Chat color fetch failed:", err.message);
+      liveStatus = liveStatus || (await isUserLive(userId, accessToken, platformId));
     }
-
-    try {
-      const followersRes = await axios.get(
-        "https://api.twitch.tv/helix/channels/followers",
-        {
-          params: { broadcaster_id: userId },
-          headers: {
-            Authorization: `Bearer ${accessToken}`,
-            "Client-ID": process.env.TWITCH_CLIENT_ID,
-          },
-        }
-      );
-
-      totalFollowers = followersRes.data.total;
-    } catch (err) {
-      console.warn("Followers fetch failed:", err.message);
-    }
-
-    try {
-      const channelRes = await axios.get(
-        "https://api.twitch.tv/helix/channels",
-        {
-          params: { broadcaster_id: userId },
-          headers: {
-            Authorization: `Bearer ${accessToken}`,
-            "Client-ID": process.env.TWITCH_CLIENT_ID,
-          },
-        }
-      );
-
-      channelInfo = channelRes.data.data[0] || null;
-    } catch (err) {
-      console.warn("Channel info fetch failed:", err.message);
-    }
-
-    const liveStatus = await isUserLive(userId, accessToken);
 
     const finalDetails = {
       user_id: userId,
       ...userDetailsRaw,
-      color: color,
-      total_followers: totalFollowers,
-      channel_info: channelInfo,
-      is_live: liveStatus.isLive,
-      viewer_count: liveStatus.view,
+      color: color || "",
+      total_followers: totalFollowers || "",
+      channel_info: channelInfo || "",
+      is_live: liveStatus?.isLive || false,
+      viewer_count: liveStatus?.view || 0,
     };
 
     res.status(200).json(finalDetails);
   } catch (error) {
-    console.error(
-      "Error fetching user data:",
-      error.response?.data || error.message
-    );
-    res.status(500).send("An error occurred while fetching user data");
+    console.error("An error occurred while fetching user data", error.response?.data || error.message);
+    res.status(400).send("An error occurred while fetching user data");
   }
 }
-const checkUserExistence = async (channelId, userId) => {
-  const repo = AppDataSource.getRepository(UserFavorite);
 
-  const exists = await repo.findOne({
-    where: {
-      channelId,
-      userId,
-    },
-  });
 
-  return !!exists;
-};
-async function checkIfUserExists(req, res) {
-  const { id } = req.query;
-  const channelId = req.user.id;
+async function checkUserExistence(req, res) {
+  const { channelId } = req.user;
+  const { broadcasterId } = req.body;
+  const { platformId } = req.user;
 
-  if (!id) {
-    return res.status(400).send("ID is required");
+  try {
+    const repo = AppDataSource.getRepository(UserChannels);
+    const existingUser = await repo.findOneBy({ channelId: broadcasterId, platformId });
+
+    if (existingUser) {
+      return res.status(200).json({ exists: true, data: existingUser });
+    }
+
+    const { accessToken } = await fetchToken(channelId);
+    let userResponse = null;
+
+    if (platformId === 2) {
+      userResponse = await axios.get(`https://api.kick.com/public/v1/users`, {
+        params: { id: broadcasterId },
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+          "Client-ID": process.env.KICK_CLIENT_ID,
+        },
+      });
+    } else {
+      userResponse = await axios.get(`https://api.twitch.tv/helix/users`, {
+        params: { id: broadcasterId },
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+          "Client-ID": process.env.TWITCH_CLIENT_ID,
+        },
+      });
+    }
+
+    const userData = userResponse.data.data[0];
+    if (!userData) {
+      return res.status(404).json({ exists: false, message: "User not found" });
+    }
+
+    const newUser = repo.create({
+      channelId: broadcasterId,
+      nameLogin: userData.login || userData.username,
+      displayName: userData.display_name || userData.username,
+      profileImageUrl: userData.profile_image_url || userData.avatar,
+      platformId,
+    });
+
+    await repo.save(newUser);
+
+    res.status(200).json({ exists: true, data: newUser });
+  } catch (error) {
+    console.error("Error checking user existence:", error.response?.data || error.message);
+    res.status(500).send("Error checking user existence");
+  }
+}
+
+async function toggleFavorite(req, res) {
+  const { channelId } = req.user;
+  const { broadcasterId } = req.body;
+  const { platformId } = req.user;
+
+  if (!broadcasterId) {
+    return res.status(400).json({ message: "broadcasterId is required" });
   }
 
   try {
-    const isHost = id === channelId;
-    const userExists = await checkUserExistence(channelId, id);
+    const repo = AppDataSource.getRepository(UserFavorite);
+    const existingFavorite = await repo.findOneBy({ channelId, broadcasterId, platformId });
 
-    res.status(200).json({ isHost, userExists });
-  } catch (err) {
-    console.error("Error checking user existence:", err.message);
-    res
-      .status(500)
-      .json({ error: "An error occurred while checking user existence" });
+    if (existingFavorite) {
+      await repo.delete({ channelId, broadcasterId, platformId });
+
+      if (favoriteCache.has(channelId)) {
+        favoriteCache.get(channelId).delete(broadcasterId);
+      }
+
+      return res.status(200).json({ message: "Removed from favorites", favorite: false });
+    } else {
+      const newFav = repo.create({ channelId, broadcasterId, platformId });
+      await repo.save(newFav);
+
+      if (!favoriteCache.has(channelId)) {
+        favoriteCache.set(channelId, new Set());
+      }
+      favoriteCache.get(channelId).add(broadcasterId);
+
+      return res.status(200).json({ message: "Added to favorites", favorite: true });
+    }
+  } catch (error) {
+    console.error("Error toggling favorite:", error.response?.data || error.message);
+    res.status(500).send("Error toggling favorite");
   }
 }
-const getUserSettings = async (req, res) => {
+
+async function getFavorites(req, res) {
+  const { id: channelId, platformId } = req.user;
+
   try {
-    const userId = req.user.id;
+    const repo = AppDataSource.getRepository(ViewFavoriteUsers);
+    const favorites = await repo.findBy({ channelId, platformId });
+
+    const formattedFavorites = favorites.map((fav) => ({
+      broadcasterId: fav.broadcasterId,
+      displayName: fav.displayName,
+      nameLogin: fav.nameLogin,
+      profileImageUrl: fav.profileImageUrl,
+    }));
+
+    res.status(200).json(formattedFavorites);
+  } catch (error) {
+    console.error("Error fetching favorites:", error.response?.data || error.message);
+    res.status(500).send("Error fetching favorites");
+  }
+}
+
+async function getUserSettings(req, res) {
+  const {  channelId, platformId } = req.user;
+
+  try {
     const repo = AppDataSource.getRepository(UserSetting);
-
-    const settings = await repo.findOne({ where: { userId: userId } });
+    const settings = await repo.findOneBy({ userId:channelId, platformId });
 
     if (!settings) {
-      return res.status(404).send("User not found");
+      return res.status(404).send("Settings not found");
+    }
+    
+    res.status(200).json(settings);
+  } catch (error) {
+    console.error("Error fetching user settings:", error.response?.data || error.message);
+    res.status(500).send("Error fetching user settings");
+  }
+}
+const getFavoriteUser = async (req, res) => {
+  const channelId = req.user.id; // Authenticated user's channel ID
+  const { userId } = req.query; // ID للشخص المراد التحقق منه
+  const { platformId } = req.user;
+
+  if (!channelId) {
+    return res.status(400).json({ error: "channelId is required" });
+  }
+
+  if (!userId) {
+    return res.status(400).json({ error: "userId is required" });
+  }
+
+  try {
+    const repo = AppDataSource.getRepository(ViewFavoriteUsers);
+
+    // البحث عن المستخدم في المفضلة
+    const favoriteUser = await repo.findOne({
+      where: { channelId: channelId, userId: userId, platformId },
+    });
+
+    if (!favoriteUser) {
+      // غير موجود في المفضلة
+      return res.status(200).json({ isFavorite: false });
     }
 
-    res.status(200).json(settings);
-  } catch (err) {
-    console.error("Error fetching user settings:", err);
-    res.status(500).send("Error fetching user settings");
+    // موجود في المفضلة، إرجاع البيانات الأساسية
+    const result = {
+      ...favoriteUser,
+      isFavorite: true,
+    };
+
+    res.status(200).json(result);
+  } catch (error) {
+    console.error(
+      "Error fetching favorite user:",
+      error.response?.data || error.message
+    );
+
+    res.status(500).json({
+      error: "An error occurred while fetching favorite user",
+    });
   }
 };
 
-const updateUserSettings = async (req, res) => {
-  try {
-    const userId = req.user.id;
-    const repo = AppDataSource.getRepository(UserSetting);
+async function updateUserSettings(req, res) {
+  const {channelId, platformId } = req.user;
+  const newSettings = req.body;
 
-    const existing = await repo.findOne({ where: { userId: userId } });
+  try {
+    const repo = AppDataSource.getRepository(UserSetting);
+    let existing = await repo.findOneBy({ userId:channelId, platformId });
 
     if (!existing) {
-      return res.status(404).send("User not found");
+      existing = repo.create({ userId:channelId, platformId, ...newSettings });
+    } else {
+      Object.assign(existing, newSettings);
     }
-
-    const {
-      is_streaming,
-      is_bot_active,
-      is_notify_active,
-      is_sound_notify,
-      show_favorites,
-    } = req.body;
-
-    // تحديث القيم
-    existing.isStreaming = is_streaming;
-    existing.isBotActive = is_bot_active;
-    existing.isNotifyActive = is_notify_active;
-    existing.isSoundNotify = is_sound_notify;
-    existing.showFavorites = show_favorites;
 
     await repo.save(existing);
 
-    res.status(200).send("Settings updated successfully");
-  } catch (err) {
-    console.error("Error updating user settings:", err);
-    res.status(500).send("Error updating user settings");
+    res.status(200).json({ message: "Settings updated successfully", data: existing });
+  } catch (error) {
+    console.error("Error updating user settings:", error.response?.data || error.message);
+    res.status(500).send("Error updating settings");
   }
-};
+}
 
-// const getFavorite = async (req, res) => {
-//   const { profileId } = req.query;
-//   if (!profileId) {
-//     return res.status(400).json({ error: "Profile ID is required" });
-//   }
+async function getTwitchActivity(req, res) {
+  const { id: channelId } = req.user;
+  const { platformId } = req.user;
 
-//   try {
-//     const repo = AppDataSource.getRepository(UserFavorite);
+  try {
+    const repo = AppDataSource.getRepository(TwitchActivity);
+    const activities = await repo.findBy({ channelId, platformId });
 
-//     const favorite = await repo.find({
-//       where: { channelId: profileId },
-//     });
+    res.status(200).json(activities);
+  } catch (error) {
+    console.error("Error fetching Twitch activity:", error.response?.data || error.message);
+    res.status(500).send("Error fetching Twitch activity");
+  }
+}
 
-//     res.status(200).json(favorite);
-//   } catch (err) {
-//     console.error("Error fetching favorite users:", err);
-//     res
-//       .status(500)
-//       .json({ error: "An error occurred while fetching favorite users" });
-//   }
-// };
+async function getTwitchStreaks(req, res) {
+  const { id: channelId } = req.user;
+  const { platformId } = req.user;
+
+  try {
+    const repo = AppDataSource.getRepository(TwitchStreaks);
+    const streaks = await repo.findBy({ channelId, platformId });
+
+    res.status(200).json(streaks);
+  } catch (error) {
+    console.error("Error fetching Twitch streaks:", error.response?.data || error.message);
+    res.status(500).send("Error fetching Twitch streaks");
+  }
+}
 const getFavorite = async (req, res) => {
-  const { profileId } = req.params; 
+  const { profileId } = req.params;
+  const { platformId } = req.user;
   const channelId = req.user.id;
 
   if (!profileId) {
@@ -433,35 +595,100 @@ const getFavorite = async (req, res) => {
     const repoSetting = AppDataSource.getRepository(UserSetting);
 
     // جلب إعدادات المستخدم
-    const settingsArray = await repoSetting.find({ where: { userId: profileId } });
-    const settings = Array.isArray(settingsArray) && settingsArray.length > 0 ? settingsArray[0] : null;
+    const settingsArray = await repoSetting.find({
+      where: { userId: profileId, platformId },
+    });
+
+    const settings =
+      Array.isArray(settingsArray) && settingsArray.length > 0
+        ? settingsArray[0]
+        : null;
 
     // جلب كل المفضلين لهذا المستخدم
-    let favorites = await repo.find({ where: { channelId: profileId } });
+    let favorites = await repo.find({
+      where: { channelId: profileId, platformId },
+    });
 
+    // التحقق من الإعدادات في حال المستخدم الحالي يختلف عن صاحب الملف
     if (channelId !== profileId) {
-      // إذا توجد إعدادات و showFavorites = 1 → نُظهر فقط المفضلات الخاصة
-      if (settings && settings.showFavorites === 1) {
-        favorites = favorites.filter(fav => fav.isPrivate === 1);
+      if (settings) {
+        if (settings.showFavorites === 1) {
+          // إخفاء الكل
+          favorites = [];
+        } else if (settings.showFavorites === 0) {
+          // إخفاء فقط الأشخاص private
+          favorites = favorites.filter((fav) => fav.isPrivate !== 1);
+        }
       }
-      // إذا لم توجد إعدادات أو showFavorites ≠ 1 → نُظهر جميع المفضلات
     }
 
-    // صاحب الملف يرى كل شيء دائمًا
-
     res.status(200).json(favorites);
-  } catch (err) {
-    console.error("Error fetching favorite users:", err);
-    res.status(500).json({ error: "An error occurred while fetching favorite users" });
+  } catch (error) {
+    console.error(
+      "Error fetching favorite users:",
+      error.response?.data || error.message
+    );
+
+    res.status(500).json({
+      error: "An error occurred while fetching favorite users",
+    });
   }
 };
+const getMyFavorite = async (req, res) => {
+  const channelId = req.user.id; // Authenticated user's channel ID
+  const { platformId } = req.user;
 
+  if (!channelId) {
+    return res.status(400).json({ error: "channelId is required" });
+  }
 
+  try {
+    const { accessToken } = await fetchToken(channelId);
+    const repo = AppDataSource.getRepository(ViewFavoriteUsers);
+
+    let favorites = await repo.find({
+      where: { channelId: channelId, platformId },
+    });
+
+favorites = await Promise.all(
+  favorites.map(async (user) => {
+    let liveStatus
+    
+    if (platformId === 2) {
+       liveStatus = await isUserLiveKick(user.userId, accessToken,2);
+    }else{
+      liveStatus = await isUserLive(user.userId, accessToken,1);
+
+    }
+        return {
+          ...user,
+          isLive: liveStatus?.isLive || false,
+          viewerCount: liveStatus?.view || 0,
+          title: liveStatus?.title || null,
+          startedAt: liveStatus?.startedAt || null,
+          duration: liveStatus?.duration || null,
+        };
+      })
+    );
+
+    res.status(200).json(favorites);
+  } catch (error) {
+    console.error(
+      "Error fetching favorite users:",
+      error.response?.data || error.message
+    );
+
+    res.status(500).json({
+      error: "An error occurred while fetching favorite users",
+    });
+  }
+};
 const updatePrivacy = async (req, res) => {
   const { userId, isPrivate } = req.body; // userId والـ 0/1 الجديد
   const channelId = req.user.id; // الشخص اللي عامل الطلب
+  const { platformId } = req.user;
 
-  if (!userId || typeof isPrivate === 'undefined') {
+  if (!userId || typeof isPrivate === "undefined") {
     return res.status(400).json({ error: "userId and isPrivate are required" });
   }
 
@@ -469,7 +696,9 @@ const updatePrivacy = async (req, res) => {
     const repo = AppDataSource.getRepository(UserFavorite);
 
     // نجد المستخدم المفضل الحالي
-    const favorite = await repo.findOne({ where: { channelId, userId } });
+    const favorite = await repo.findOne({
+      where: { channelId, userId, platformId },
+    });
 
     if (!favorite) {
       return res.status(404).json({ error: "Favorite user not found" });
@@ -479,13 +708,21 @@ const updatePrivacy = async (req, res) => {
     favorite.isPrivate = isPrivate; // 0 أو 1
     await repo.save(favorite);
 
-    res.status(200).json({ message: "Privacy updated successfully", isPrivate });
-  } catch (err) {
-    console.error("Error updating privacy:", err);
-    res.status(500).json({ error: "An error occurred while updating privacy" });
+    res.status(200).json({
+      message: "Privacy updated successfully",
+      isPrivate,
+    });
+  } catch (error) {
+    console.error(
+      "Error updating privacy:",
+      error.response?.data || error.message
+    );
+
+    res.status(500).json({
+      error: "An error occurred while updating privacy",
+    });
   }
 };
-
 const createFavoriteUser = async (req, res) => {
   const {
     user_id,
@@ -494,7 +731,8 @@ const createFavoriteUser = async (req, res) => {
     broadcaster_type,
     description,
     profile_image_url,
-    color,total_followers
+    color,
+    total_followers,
   } = req.body;
 
   if (!user_id || !login) {
@@ -503,20 +741,27 @@ const createFavoriteUser = async (req, res) => {
 
   const channelId = req.user.id;
 
+  if (Number(channelId) === Number(user_id)) {
+    return res.status(400).send("channelId cannot be equal to userId");
+  }
+
+  const { platformId } = req.user;
+
   try {
     const repo = AppDataSource.getRepository(UserFavorite);
 
     const newFavorite = repo.create({
       id: uuidv4(),
       channelId,
-      userId:user_id,
+      userId: user_id,
       login,
-      displayName:display_name,
-      broadcasterType:broadcaster_type,
+      displayName: display_name,
+      broadcasterType: broadcaster_type,
       description,
-      profileImageUrl:profile_image_url,
+      profileImageUrl: profile_image_url,
       color,
-      totalFollowers: total_followers
+      totalFollowers: total_followers,
+      platformId,
     });
 
     const saved = await repo.save(newFavorite);
@@ -530,18 +775,21 @@ const createFavoriteUser = async (req, res) => {
       bio: saved.description,
       profile_image: saved.profileImageUrl,
       color: saved.color,
-      total_followers: saved.totalFollowers
+      total_followers: saved.totalFollowers,
     });
-  } catch (err) {
-    console.error("Error inserting user data:", err);
+  } catch (error) {
+    console.error(
+      "Error inserting user data:",
+      error.response?.data || error.message
+    );
+
     res.status(500).send("An error occurred while inserting user data");
   }
 };
 const deleteFavoriteUser = async (req, res) => {
   const { id } = req.body;
-  console.log(id);
-  
   const channelId = req.user.id;
+  const { platformId } = req.user;
 
   if (!id) {
     return res.status(400).send("user_id is required");
@@ -550,12 +798,16 @@ const deleteFavoriteUser = async (req, res) => {
   try {
     const repo = AppDataSource.getRepository(UserFavorite);
 
-    const userToDelete = await repo.findOne({
-      where: {
-        channelId,
-        id,
-      },
+    // حاول العثور على السجل أولاً باستخدام userId أو id
+    let userToDelete = await repo.findOne({
+      where: { channelId, id, platformId },
     });
+
+    if (!userToDelete) {
+      userToDelete = await repo.findOne({
+        where: { channelId, userId: id, platformId },
+      });
+    }
 
     if (!userToDelete) {
       return res.status(404).send("User not found in favorites");
@@ -563,53 +815,108 @@ const deleteFavoriteUser = async (req, res) => {
 
     await repo.remove(userToDelete);
 
-    res.status(200).json({ message: "User removed from favorites" });
-  } catch (err) {
-    console.error("Error deleting user from favorites:", err);
-    res.status(500).send("An error occurred while deleting user from favorites");
+    res.status(200).json({
+      message: "User removed from favorites",
+      deletedUserId: userToDelete.userId,
+    });
+  } catch (error) {
+    console.error(
+      "Error deleting user from favorites:",
+      error.response?.data || error.message
+    );
+
+    res.status(500).send(
+      "An error occurred while deleting user from favorites"
+    );
+  }
+};
+const getJoinedChannels = async (req, res) => {
+  try {
+    const repo = AppDataSource.getRepository(VwActiveUserTokensInfo);
+    const channelJoin = await repo.find();
+    res.status(200).json(channelJoin);
+  } catch (error) {
+    console.error(
+      "❌ خطأ أثناء استرجاع القنوات:",
+      error.response?.data || error.message
+    );
   }
 };
 
-const getMyFavorite = async (req, res) => {
-  const channelId = req.user.id; // Authenticated user's channel ID
+async function insertEvent(
+  ActivityId,
+  broadcasterId,
+  broadcasterUsername,
+  moderatorId,
+  moderatorUsername,
+  note,
+  userId,
+  username,
+  reason,
+  eventTime,
+  typeId,
+  counts,
+  avatar,
+  displayName
+) {
+  const { platformId } = req.user;
 
-  if (!channelId) {
-    return res.status(400).json({ error: "channelId is required" });
+  try {
+    const repo = AppDataSource.getRepository(TwitchActivity);
+
+    const newEvent = repo.create({
+      ActivityId,
+      broadcasterId,
+      broadcasterUsername,
+      moderatorId,
+      moderatorUsername,
+      note,
+      userId,
+      username,
+      reason,
+      eventTime,
+      typeId,
+      counts,
+      avatar,
+      displayName,
+      platformId,
+    });
+
+    await repo.save(newEvent);
+  } catch (error) {
+    console.error(
+      "❌ Error inserting event:",
+      error.response?.data || error.message
+    );
+  }
+}
+async function checkIfUserExists(req, res) {
+  const { id } = req.query;
+  const channelId = req.user.id;
+
+  if (!id) {
+    return res.status(400).send("ID is required");
   }
 
   try {
-    const accessToken = await fetchToken(channelId);
-    const repo = AppDataSource.getRepository(ViewFavoriteUsers);
+    const isHost = id === channelId;
+    const userExists = await checkUserExistence(channelId, id);
 
-    let favorites = await repo.find({
-      where: { channelId: channelId },
-    });
-
-    favorites = await Promise.all(
-      favorites.map(async (user) => {
-        const liveStatus = await isUserLive(user.userId, accessToken);
-        
-        return {
-          ...user,
-          isLive: liveStatus?.isLive || false,
-          viewerCount: liveStatus?.view || 0,
-          title: liveStatus?.title || null,
-          startedAt: liveStatus?.startedAt || null,
-          duration: liveStatus?.duration || null,
-        };
-      })
+    res.status(200).json({ isHost, userExists });
+  } catch (error) {
+    console.error(
+      "Error checking user existence:",
+      error.response?.data || error.message
     );
 
-    res.status(200).json(favorites);
-  } catch (err) {
-    console.error("Error fetching favorite users:", err);
-    res.status(500).json({ error: "An error occurred while fetching favorite users" });
+    res.status(500).json({
+      error: "An error occurred while checking user existence",
+    });
   }
-};
+}
 const loadFavoritesFromDB = async (req, res) => {
   try {
     const repo = AppDataSource.getRepository(UserFavorite);
-
     const favorites = await repo.find(); // جميع السجلات
 
     favoriteCache.clear();
@@ -623,77 +930,75 @@ const loadFavoritesFromDB = async (req, res) => {
 
       favoriteCache.get(channelId).add(userId);
     }
+  } catch (error) {
+    console.error(
+      "❌ Error loading favorites cache:",
+      error.response?.data || error.message
+    );
+  }
+};
 
-    console.log("✅ Loaded favorite broadcasters cache");
-  } catch (err) {
-    console.error("❌ Error loading favorites cache:", err);
+async function isUserLiveKick(userId, accessToken, refreshToken,data) {
+  try {
+    const response = await axios.get(
+      "https://api.kick.com/public/v1/livestreams",
+      {
+        params: { broadcaster_user_id: userId },
+        headers: { Authorization: `Bearer ${accessToken}` },
+      }
+    );
+
+    const streamData = response.data.data;
+
+    if (streamData.length > 0) {
+      const startedAt = new Date(streamData[0].started_at);
+      const now = new Date();
+      const diffMs = now - startedAt;
+
+      const hours = Math.floor(diffMs / (1000 * 60 * 60));
+      const minutes = Math.floor((diffMs % (1000 * 60 * 60)) / (1000 * 60));
+      const seconds = Math.floor((diffMs % (1000 * 60)) / 1000);
+
+      return {
+        isLive: true,
+        title: streamData[0].title,
+        view: streamData[0].viewer_count || 0,
+        startedAt: streamData[0].started_at,
+        duration: `${hours}h ${minutes}m ${seconds}s`,
+      };
+    }
+
+    return { isLive: false, view: 0, startedAt: null, duration: null };
+  } catch (error) {
+    console.warn(
+      "Error fetching live status Kick:",
+      error.response?.data || error.message
+    );
+
+    // فقط لو Unauthorized نحاول تحديث التوكن
+    if (error.response?.status === 401 || error.response?.data?.message === "Unauthorized") {
+      const newTokens = await refreshKickAccessToken(refreshToken,data);
+      if (newTokens) {
+        // نحاول مرة ثانية باستخدام التوكن الجديد
+        return await isUserLiveKick(userId, newTokens.access_token, newTokens.refresh_token);
+      }
+    }
+
+    return { isLive: false, view: 0, startedAt: null, duration: null };
   }
 }
-async function showWhoAddFavorite(broadcasterId) {
-  try {
-    const repo = AppDataSource.getRepository(UserFavorite);
-
-    const records = await repo.find({
-      where: { userId: broadcasterId },
-      select: ["channelId"],
-    });
-
-    return records.map(r => r.channelId); // فقط الآيدي تبع القناة
-  } catch (err) {
-    console.error("❌ Error loading favorites:", err);
-    return [];
-  }
-}
-function isBroadcasterFavorite(broadcasterId, channelId) {
-  return favoriteCache.get(channelId)?.has(broadcasterId) ?? false;
-}
-const getJoinedChannels = async (req, res) => {
-
-  try {
-    const repo = AppDataSource.getRepository(VwActiveUserTokensInfo);
-
-    const channelJoin = await repo.find()
-    
-     res.status(200).json(channelJoin );
-  } catch (err) {
-    console.error('❌ خطأ أثناء استرجاع القنوات:', err);
-  } 
-}
-async function insertEvent(ActivityId,broadcasterId,broadcasterUsername,moderatorId,moderatorUsername,userId,username,reason,eventTime,typeId,counts,avatar) {
-  try {
-    const repo = AppDataSource.getRepository(TwitchActivity);
-
-    const newEvent = repo.create({
-      ActivityId,
-      broadcasterId,
-      broadcasterUsername,
-      moderatorId,
-      moderatorUsername,
-      userId,
-      username,
-      reason,
-      eventTime,
-      typeId,
-      counts,
-      avatar,
-    });
-
-    await repo.save(newEvent);
-    // console.log("✅ Event inserted successfully.");
-  } catch (err) {
-    console.error("❌ Error inserting event:", err.message);
-  }
-}
-
 
 module.exports = {
-  getUserProfile,isBroadcasterFavorite,loadFavoritesFromDB,showWhoAddFavorite,getJoinedChannels,insertEvent,
-  getAllUserProfiles,updateUserLanguage,
-  getChannelStatus,
+  getUserProfile,loadFavoritesFromDB,
+  updateUserLanguage,checkIfUserExists,
+  isUserLive,getAllUserProfiles,isUserLiveKick,
   getChannelInfo,
-  checkIfUserExists,
-  getUserSettings,updatePrivacy,
+  checkUserExistence,getChannelStatus,
+  toggleFavorite,updatePrivacy,getJoinedChannels,
+  getFavorites,
+  getUserSettings,getMyFavorite,createFavoriteUser,
   updateUserSettings,
-  getFavorite,isUserLive,
-  getMyFavorite,createFavoriteUser,deleteFavoriteUser
+  getTwitchActivity,deleteFavoriteUser,
+  getFavoriteUser,
+  getTwitchStreaks,getFavorite
 };
