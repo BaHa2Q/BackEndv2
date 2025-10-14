@@ -55,7 +55,6 @@ const callbackTwitch = async (req, res) => {
     channelData.scopes = Array.isArray(scope) ? scope.join(",") : "";
     channelData.access_token = access_token;
     channelData.refresh_token = refresh_token;
-    channelData.platformId = 1;
     // باقي الكود كما هو
     const token = jwt.sign(
       {
@@ -63,7 +62,7 @@ const callbackTwitch = async (req, res) => {
         login: channelData.login,
         access_token: channelData.access_token,
         refresh_token: channelData.refresh_token,
-        platformId: channelData.platformId
+        platformId: 1
       },
       jwtSecret,
       { expiresIn: "30d" }
@@ -126,10 +125,6 @@ const callbackKick = async (req, res) => {
     channelData.scopes = scope ? scope.split(" ").join(",") : "";
     channelData.access_token = access_token;
     channelData.refresh_token = refresh_token;
-    channelData.platformId = 2;
-
-   
-    
     channelData.id = channelData.user_id;
     channelData.login = channelData.name;
     channelData.display_name = channelData.name
@@ -141,7 +136,7 @@ const callbackKick = async (req, res) => {
         login: channelData.name,
         access_token: channelData.access_token,
         refresh_token: channelData.refresh_token,
-        platformId: channelData.platformId
+        platformId: 2
       },
       jwtSecret,
       { expiresIn: "30d" }

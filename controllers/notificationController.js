@@ -22,7 +22,7 @@ const saveNotification = async ({userId,streamId,title,broadcasterName,broadcast
 
     await repo.save(notification);
     
-    console.log(`✅ Notification saved for ${broadcaster}`);
+    console.log(`✅ Notification saved for ${broadcasterName}`);
   } catch (err) {
     console.error("❌ Error saving notification to DB:", err.message);
   }

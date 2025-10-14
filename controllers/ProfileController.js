@@ -4,7 +4,7 @@ const { UserChannels } = require("../entities/UserChannelsModel");
 const { UserFavorite } = require("../entities/UserFavoriteModel");
 const { UserSetting } = require("../entities/UserSettingModel");
 const { ViewFavoriteUsers } = require("../entities/ViewFavoriteUsersModel");
-
+const { v4: uuidv4 } = require("uuid");
 const { TwitchActivity } = require("../entities/TwitchActivityModel");
 const { fetchToken } = require("../utils/Token");
 const { VwAllUserTokensInfo } = require("../entities/VwAllUserTokensInfoModel");
@@ -542,7 +542,7 @@ async function updateUserSettings(req, res) {
     } else {
       Object.assign(existing, newSettings);
     }
-
+    
     await repo.save(existing);
 
     res.status(200).json({ message: "Settings updated successfully", data: existing });

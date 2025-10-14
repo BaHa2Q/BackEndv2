@@ -24,30 +24,30 @@ async function getUserImage(apiClient, userId) {
 const TWITCH_CLIENT_ID = process.env.TWITCH_CLIENT_ID;
 const TWITCH_CLIENT_SECRET = process.env.TWITCH_CLIENT_SECRET;
 async function eventChannel() {
-//   const repo = AppDataSource.getRepository(VwActiveUserTokensInfo);
-//   const joinedChannels = await repo.find(); // ✅ تأكد إنها ترجع مصفوفة
-//   if (!joinedChannels || joinedChannels.length === 0) {
-//     console.warn("⚠️ لا يوجد قنوات مفعّلة للاستماع إليها");
-//     return;
-//   }
-//   const authProvider = new RefreshingAuthProvider({
-//     clientId: TWITCH_CLIENT_ID,
-//     clientSecret: TWITCH_CLIENT_SECRET,
-//   });
+  const repo = AppDataSource.getRepository(VwActiveUserTokensInfo);
+  const joinedChannels = await repo.find({where: {platformId:1}}); // ✅ تأكد إنها ترجع مصفوفة
+  if (!joinedChannels || joinedChannels.length === 0) {
+    console.warn("⚠️ لا يوجد قنوات مفعّلة للاستماع إليها");
+    return;
+  }
+  const authProvider = new RefreshingAuthProvider({
+    clientId: TWITCH_CLIENT_ID,
+    clientSecret: TWITCH_CLIENT_SECRET,
+  });
 
-//   for (const channel of joinedChannels) {
-//     const { channelId, accessToken, refreshToken } = channel || [];
-//     await authProvider.addUserForToken({
-//       accessToken: accessToken,
-//       refreshToken: refreshToken,
-//       expiresIn: 0,
-//       obtainmentTimestamp: 0,
-//     });
+  for (const channel of joinedChannels) {
+    const { channelId, accessToken, refreshToken } = channel || [];
+    await authProvider.addUserForToken({
+      accessToken: accessToken,
+      refreshToken: refreshToken,
+      expiresIn: 0,
+      obtainmentTimestamp: 0,
+    });
 
-//     const apiClient = new ApiClient({ authProvider });
-//     const listener = new EventSubWsListener({ apiClient });
+    const apiClient = new ApiClient({ authProvider });
+    const listener = new EventSubWsListener({ apiClient });
 
-//     await listener.start();
+    await listener.start();
 
 //     listener.onChannelSubscriptionMessage(channelId, async (event) => {
 //       const typeId = 1;
@@ -75,7 +75,8 @@ async function eventChannel() {
 //         typeId,
 //         event.cumulativeMonths || 1,
 //         profileImage,
-//         null
+//         null,
+//         platformId=1
 //       );
 //     });
 //     listener.onChannelSubscriptionGift(channelId, async (event) => {
@@ -103,7 +104,8 @@ async function eventChannel() {
 //         typeId,
 //         event.amount,
 //         profileImage,
-//         null
+//         null,
+//         platformId=1
 //       );
 //     });
 //     listener.onChannelRedemptionAdd(channelId, async (event) => {
@@ -136,7 +138,8 @@ async function eventChannel() {
 //         typeId,
 //         event.rewardCost,
 //         profileImage,
-//         event.rewardTitle
+//         event.rewardTitle,
+//         platformId=1
 //       );
 //     });
 //     listener.onChannelWarningSend(channelId, channelId, async (event) => {
@@ -166,7 +169,8 @@ async function eventChannel() {
 //         typeId,
 //         null,
 //         profileImage,
-//         null
+//         null,
+//         platformId=1
 //       );
 //     });
 //     listener.onChannelBan(channelId, async (event) => {
@@ -230,7 +234,8 @@ async function eventChannel() {
 //         typeId,
 //         timeoutDuration,
 //         profileImage,
-//         null
+//         null,
+//         platformId=1
 //       );
 //     });
 //     listener.onChannelCheer(channelId, async (event) => {
@@ -260,7 +265,8 @@ async function eventChannel() {
 //         typeId,
 //         event.bits,
 //         profileImage,
-//         null
+//         null,
+//         platformId=1
 //       );
 //     });
 //     listener.onChannelRaidTo(channelId, async (event) => {
@@ -289,7 +295,8 @@ async function eventChannel() {
 //         typeId,
 //         event.viewers,
 //         profileImage,
-//         null
+//         null,
+//         platformId=1
 //       );
 //     });
 //     listener.onChannelFollow(channelId, channelId, async (event) => {
@@ -319,10 +326,11 @@ async function eventChannel() {
 //         typeId,
 //         null,
 //         profileImage,
-//         null
+//         null,
+//         platformId=1
 //       );
 //     });
-//   }
+  }
 }
 
 module.exports = { eventChannel };

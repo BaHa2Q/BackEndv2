@@ -64,12 +64,11 @@ const badWordPost = async (req, res) => {
 };
 
 const botsGet = async (req, res) => {
+  const {platformId} = req.user
+  const channelId = req.user.id;
   try {
-    const channelId = req.user.id;
     const repo = AppDataSource.getRepository(Bots);
-    const {platformId} = req.user
-    const bots = await repo.findOne({ where: channelId,platformId });
-
+    const bots = await repo.findOne({ where: { channelId, platformId } });    
     if (!bots || !bots.username) {
       return res.status(200).json([]); // array فاضي
     }

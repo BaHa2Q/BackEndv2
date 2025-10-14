@@ -51,7 +51,7 @@ const fetchFollowers = async (req, res) => {
         'Client-Id': process.env.TWITCH_CLIENT_ID,
       },
       params: {
-        broadcaster_id: broadcasterId,
+        broadcaster_id: channelId,
         first,
         after,
       },
@@ -111,7 +111,7 @@ const fetchAllFollowedUsers = async (req, res) => {
           'Client-Id': process.env.TWITCH_CLIENT_ID,
         },
         params: {
-          user_id: broadcasterId,
+          user_id: channelId,
           after: cursor,
         },
       });
@@ -152,7 +152,7 @@ const {accessToken} = await fetchToken(channelId);
           Authorization: `Bearer ${accessToken}`,
           "Client-Id": process.env.TWITCH_CLIENT_ID,
         },
-        params: { user_id: broadcasterId, after: cursorFollowed },
+        params: { user_id: channelId, after: cursorFollowed },
       });
 
       allFollowedUsers = allFollowedUsers.concat(response.data.data);
@@ -171,7 +171,7 @@ const {accessToken} = await fetchToken(channelId);
           Authorization: `Bearer ${accessToken}`,
           "Client-Id": process.env.TWITCH_CLIENT_ID,
         },
-        params: { broadcaster_id: broadcasterId, after: cursorFollowers },
+        params: { broadcaster_id: channelId, after: cursorFollowers },
       });
 
       allFollowers = allFollowers.concat(response.data.data);
@@ -218,7 +218,7 @@ const {accessToken} = await fetchToken(channelId);
         else if (follower?.followed_at) followedAt = new Date(follower.followed_at);
 
         followedWithStatus.push({
-          channelId: broadcasterId,
+          channelId: channelId,
           broadcasterId: user.id,
           broadcasterLogin: user.login,
           broadcasterName: user.display_name,
@@ -239,7 +239,7 @@ const {accessToken} = await fetchToken(channelId);
 
     // -------- 4. تحديث قاعدة البيانات --------
     const repo = AppDataSource.getRepository(UserFollowed);
-    await repo.delete({ channelId: broadcasterId });
+    await repo.delete({ channelId });
     await repo.save(followedWithStatus);
 
     // -------- 5. إنهاء SSE --------

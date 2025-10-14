@@ -25,14 +25,14 @@ const getCommand = async (req, res) => {
 const getCommandById = async (req, res) => {
     const channelId = req.user.id;
   const id = req.params.id;
-
+  const {platformId} = req.user;
   try {
     const repo = AppDataSource.getRepository(Commands);
 
     const command = await repo.findOne({
       where: {
         channelId,
-        id,
+        id,platformId
       },
     });
 
@@ -161,11 +161,12 @@ const {command,message,intervalMinutes,chatLines,status} = req.body;
   try {
     const repo = AppDataSource.getRepository(CommandTimer);
 
-    const count = await repo.count({ where: { channelId } });
+    const count = await repo.count({ where: { channelId ,platformId} });
 
     if (count >= 15) {
       return res.status(403).json({ error: "Maximum of 15 timer commands allowed per channel" });
     }
+
 
 const newTimer = repo.create({
   id: uuidv4(),
@@ -177,6 +178,7 @@ const newTimer = repo.create({
   chatLines,
   status: status ?? 1,platformId
 });
+console.log(newTimer);
     await repo.save(newTimer);
 
     res.status(201).json({ message: "Timer command inserted successfully" });

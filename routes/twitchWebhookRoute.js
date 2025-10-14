@@ -7,15 +7,14 @@ const { AppTokenAuthProvider } = require("@twurple/auth");
 const { default: Redis } = require("ioredis");
 const redis = new Redis();
 
-const {
-  showWhoAddFavorite
-} = require("../controllers/ProfileController");
+
 const {
   fetchBotToken,
   fetchToken
 } = require("../utils/Token");
 const { getFavoriteChannels, getIO } = require("../utils/socket");
 const { saveNotification, stream_Day, updateUserStreak, getUserColor } = require("../controllers/notificationController");
+const { showWhoAddFavorite } = require("../controllers/favoriteHelpers");
 
 const router = express.Router();
 const SECRET = process.env.EVENTSUB_SECRET; 

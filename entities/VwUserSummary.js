@@ -45,6 +45,12 @@ const VwUserSummary = new EntitySchema({
       nullable: false,
       name: "SUBSCRIPTION_COUNT",
     },
+    chat: {
+      type: Number,
+      nullable: false,
+      name: "CHAT_COUNT",
+    },
+    
     subscriptionDurationText: {
       type: String,
       length: 255,

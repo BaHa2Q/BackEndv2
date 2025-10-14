@@ -12,7 +12,7 @@ const { MenuItems } = require("../entities/MenuItemsModel");
 const { NotificationStream } = require("../entities/NotificationStreamModel");
 const { VwWeeklyActivity } = require("../entities/VwWeeklyActivityModel");
 const { BotLogs } = require("../entities/BotLogsModel");
-const { TwitchMessages } = require("../entities/TwitchMessagesModel");
+const { Messages } = require("../entities/MessagesModel");
 const { BotLogsView } = require("../entities/BotLogsViewModel");
 const { UserChannels } = require("../entities/UserChannelsModel");
 const { UserSetting } = require("../entities/UserSettingModel");
@@ -449,7 +449,7 @@ const getChat = async (req, res) => {
   try {
     const channelId = req.user.id;
     const {accessToken} = await fetchToken(channelId);
-    const repo = AppDataSource.getRepository(TwitchMessages);
+    const repo = AppDataSource.getRepository(Messages);
 const {platformId} = req.user;
     // الكلمات الممنوعة
     const spamKeywords = ["huierp.xyz", "niren88.com", "qqzy"];
@@ -541,7 +541,7 @@ const getUserMessages = async (req, res) => {
   const { userId } = req.query;
   const {platformId} = req.user;
   try {
-    const repo = AppDataSource.getRepository(TwitchMessages);
+    const repo = AppDataSource.getRepository(Messages);
 
     const messages = await repo.find({
       where: {
@@ -604,6 +604,11 @@ const dashboardTotalsHandler = async (req, res) => {
       0
     );
 
+    
+    const filteredSubscriptions = subscriptionsData.data.filter(
+      (sub) => sub.user_id !== channelId
+    ).length;
+
     // العد باستخدام TypeORM
     const repo = AppDataSource.getRepository(BotLogs);
 
@@ -623,7 +628,7 @@ const dashboardTotalsHandler = async (req, res) => {
 
     res.status(200).json({
       followers: followersCount,
-      subscriptions: subscriptionsCount,
+      subscriptions: filteredSubscriptions,
       totalBits,
       totalCountMessage,
       totalCountCommand,
@@ -683,7 +688,7 @@ async function getUserInfo(accessToken, userId) {
 const subscriptionsHandler = async (req, res) => {
   try {
     const channelId = req.user.id;
-    const {accessToken} = await fetchToken(channelId);
+    const { accessToken } = await fetchToken(channelId);
     const { cursor } = req.query;
 
     const response = await axios.get(
@@ -701,10 +706,14 @@ const subscriptionsHandler = async (req, res) => {
     );
 
     const subscriptions = response.data.data;
+
+    // ✅ تصفية subscriptions بحيث لا يظهر channelId
+    const filteredSubs = subscriptions.filter(sub => sub.user_id !== channelId);
+
     const nextCursor = response.data.pagination?.cursor;
 
     const detailedSubscriptions = await Promise.all(
-      subscriptions.map(async (sub) => {
+      filteredSubs.map(async (sub) => {
         const user = await getUserInfo(accessToken, sub.user_id);
         return {
           ...sub,
@@ -727,6 +736,7 @@ const subscriptionsHandler = async (req, res) => {
     res.status(500).json({ error: "Internal Server Error" });
   }
 };
+
 const eventsHandler = async (req, res) => {
   try {
    const channelId = req.user.id;
@@ -748,7 +758,7 @@ const eventsHandler = async (req, res) => {
       .orderBy("a.createdAt", "DESC")
       .getMany();
 
-
+      
     if (events.length === 0) {
       return res.status(404).send("User not found");
     }
@@ -840,12 +850,13 @@ const {platformId} = req.user;
 
     const repoStreak = AppDataSource.getRepository(VwUserSummary);
 
-    const streaks = await repoStreak.find({
+    const leaderboard = await repoStreak.find({
       where: { channelId: user.channelId ,platformId},
     });
-    return res.status(200).json(streaks);
+    
+    return res.status(200).json(leaderboard);
   } catch (error) {
-    console.error("Error fetching streaks:", error);
+    console.error("Error fetching leaderboard:", error);
     return res.status(503).send("Internal server error");
   }
 };
@@ -1020,27 +1031,43 @@ const searchTwitchUser = async (req, res) => {
   const { name } = req.query;
   const ClientId = process.env.TWITCH_CLIENT_ID;
   const channelId = req.user.id;
- const {accessToken} = await fetchToken(channelId);
+  const { accessToken } = await fetchToken(channelId);
   const authProvider = new StaticAuthProvider(ClientId, accessToken);
   const apiClient = new ApiClient({ authProvider });
 
   if (!name) return res.status(400).json({ error: "Name is required" });
 
   try {
+    // البحث عن القنوات
     const results = await apiClient.search.searchChannels(name);
 
-    const users = results.data.map((user) => ({
-      name: user.displayName,
-      login: user.name,
-      avatar: user.thumbnailUrl,
-    }));
+    // IDs لكل المستخدمين
+    const userIds = results.data.map((ch) => ch.id);
+
+    // جلب تفاصيل المستخدمين
+    const usersInfo = await apiClient.users.getUsersByIds(userIds);
+
+    // دمج البيانات
+    const users = results.data.map((user) => {
+      const fullUser = usersInfo.find((u) => u.id === user.id);
+      return {
+        id: user.id,
+        name: user.displayName,
+        login: user.name,
+        avatar: user.thumbnailUrl,
+        broadcasterType: fullUser?.broadcasterType || "none", // الآن يظهر النوع الصحيح
+        isLive: user.isLive,
+        title: user.title,
+      };
+    });
 
     res.json(users);
   } catch (err) {
-    console.error(err);
+    console.error("❌ Twitch API Error:", err);
     res.status(500).json({ error: "Twitch API error" });
   }
 };
+
 
 // إعداد transporter
 
