@@ -13,7 +13,7 @@ const {
   fetchToken
 } = require("../utils/Token");
 const { getFavoriteChannels, getIO } = require("../utils/socket");
-const { saveNotification, stream_Day, updateUserStreak, getUserColor } = require("../controllers/notificationController");
+const { saveNotification, startStream, endStream, getUserColor } = require("../controllers/notificationController");
 const { showWhoAddFavorite } = require("../controllers/favoriteHelpers");
 
 const router = express.Router();
@@ -179,8 +179,9 @@ router.post("/webhook", async (req, res) => {
 
 async function handleStreamOnline(event) {
   const broadcasterId = event.broadcaster_user_id;
+
   try {
-    const users = await showWhoAddFavorite(broadcasterId,platformId=1);
+    const users = await showWhoAddFavorite(broadcasterId, platformId = 1);
 
     // --- تحديد App للقناة ---
     let appName = Object.keys(appMap).find(key => appMap[key].includes(broadcasterId));
@@ -195,26 +196,16 @@ async function handleStreamOnline(event) {
     const userRes = await apiClient.users.getUserById(broadcasterId);
     const stream = await apiClient.streams.getStreamByUserId(broadcasterId);
     if (!stream) return; // إذا لم يكن البث مباشر
+
     const streamId = stream.id;
     const startedAt = new Date(stream.startedAt || new Date());
 
-    // --- تخزين معلومات البث في Redis ---
-    await redis.hset(`streamInfo:${broadcasterId}`, {
-      streamId,
-      startTime: startedAt.toISOString(),
-    });
+    // --- استدعاء بداية البث في قاعدة البيانات ---
+    await startStream(streamId, broadcasterId, startedAt, platformId = 1);
 
-    await stream_Day(streamId, broadcasterId, startedAt,platformId=1);
-
+    // --- إرسال الإشعارات للمستخدمين المفضلين ---
     for (const favUserId of users) {
       try {
-        const key = `notified:${favUserId}:${streamId}`;
-        const alreadyNotified = await redis.get(key);
-        if (alreadyNotified) {
-          // تخطي الإشعار إذا تم بالفعل
-          continue;
-        }
-
         const color = await getUserColor(broadcasterId, apiClient);
 
         const notificationData = {
@@ -226,11 +217,11 @@ async function handleStreamOnline(event) {
           avatar: userRes.profilePictureUrl,
           color,
           startedAt,
-          platformId:1
+          platformId: 1
         };
 
-        // --- حفظ في DB مع التعامل مع التكرار ---
-        try {     
+        // --- حفظ الإشعار في قاعدة البيانات مع التعامل مع التكرار ---
+        try {
           await saveNotification(notificationData);
         } catch (err) {
           if (err.message.includes("unique constraint")) {
@@ -240,8 +231,7 @@ async function handleStreamOnline(event) {
           }
         }
 
-        // --- وضع علامة في Redis لمنع التكرار ---
-        await redis.set(key, "1", "EX", 3600); // تخزين لمدة ساعة
+        // --- إرسال الإشعار للمستخدم عبر Socket ---
         sendSocketNotification(favUserId, notificationData);
 
       } catch (err) {
@@ -253,26 +243,20 @@ async function handleStreamOnline(event) {
     console.error("❌ Error in stream.online handler:", error.response?.data || error.message);
   }
 }
+
 async function handleStreamOffline(event) {
   const broadcasterId = event.broadcaster_user_id;
+
   try {
-    const streamInfo = await redis.hgetall(`streamInfo:${broadcasterId}`);
-    const streamDate = new Date(streamInfo.startTime);
-    const viewers = await redis.smembers(`viewers:${broadcasterId}`);
+    const streamDate = new Date();
 
-    if (viewers.length > 0) {
-      const viewerNames = await redis.hmget(`viewer_names:${broadcasterId}`, ...viewers);
-      await Promise.all(viewers.map((v, i) =>
-        updateUserStreak(v, viewerNames[i], broadcasterId, streamDate)
-      ));
-    }
+    await endStream(broadcasterId, streamDate);
 
-    await redis.del(`viewers:${broadcasterId}`);
-    await redis.del(`streamInfo:${broadcasterId}`);
   } catch (err) {
     console.error("❌ Error in stream.offline handler:", err.message);
   }
 }
+
 function sendSocketNotification(userId, notificationData) {
   const favoriteChannels = getFavoriteChannels();
   const io = getIO();

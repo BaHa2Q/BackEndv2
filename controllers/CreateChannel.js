@@ -106,6 +106,11 @@ const CreateOrUpdateChannel = async (channelData) => {
         { configId: 14, status: 1,roleId:5 },
         { configId: 15, status: 1,roleId:5 },
         { configId: 16, status: 1,roleId:5 },
+        { configId: 17, status: 1,roleId:5 },
+        { configId: 18, status: 1,roleId:5 },
+        { configId: 19, status: 1,roleId:5 },
+        { configId: 20, status: 1,roleId:5 },
+        { configId: 21, status: 1,roleId:5 },
       ];
 
       for (const row of defaultConfigs) {
@@ -126,40 +131,6 @@ const CreateOrUpdateChannel = async (channelData) => {
         isSoundNotify: 0,
           platformId:channelData.platformId
       }));
-
-      // 5. command_config
-      const commandRepo = AppDataSource.getRepository(CommandConfig);
-      const commandDefaults = [
-        {
-          action: "#addcom",
-          defaults: "#اضافة",
-          typeId: 1,
-          roleId: 1,
-        },
-        {
-          action: "#editcom",
-          defaults: "#تعديل",
-          typeId: 2,
-          roleId: 2,
-        },
-        {
-          action: "#delcom",
-          defaults: "#حذف",
-          typeId: 3,
-          roleId: 3,
-        },
-      ];
-
-      for (const row of commandDefaults) {
-        await commandRepo.save(commandRepo.create({
-          channelId: channelData.id,
-          action: row.action,
-          defaults: row.defaults,
-          typeId: row.typeId,
-          roleId: row.roleId,
-          platformId:channelData.platformId
-        }));
-      }
     }
   } catch (err) {
     console.error("❌ Error in CreateOrUpdateChannel:", err);

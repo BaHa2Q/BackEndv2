@@ -30,7 +30,6 @@ const { UserFavorite } = require("../entities/UserFavoriteModel");
 const { subscribeToChannel } = require("../routes/twitchWebhookRoute");
 const TWITCH_CLIENT_ID = process.env.TWITCH_CLIENT_ID;
 require("dotenv").config(); // Load environment variables from .env file
-
 const getMenu = async (req, res) => {
   try {
     const repo = AppDataSource.getRepository(MenuItems);
@@ -43,7 +42,10 @@ const getMenu = async (req, res) => {
       whereCondition.platformId = 2;
     }
 
-    const menu = await repo.find({ where: whereCondition });
+    const menu = await repo.find({
+      where: whereCondition,
+      order: { levels: "ASC" } // 🔥 الترتيب حسب levels تصاعدي
+    });
 
     res.status(200).json(menu);
   } catch (err) {
@@ -51,6 +53,7 @@ const getMenu = async (req, res) => {
     res.status(500).send("An error occurred while retrieving command data");
   }
 };
+
 
 const getNotifications = async (req, res) => {
   const channelId = req.user.id;

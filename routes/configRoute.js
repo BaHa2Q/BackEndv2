@@ -5,6 +5,7 @@ const configController = require('../controllers/configController');
 const Ticket = require('../controllers/TicketController');
 const LoginController = require('../controllers/LoginTwitch');
 const refreshKickToken = require('../controllers/refreshKickToken');
+const Song = require('../controllers/Song');
 const verify  = require('../utils/auth')
 const upload = multer({ storage: multer.memoryStorage() });
 
@@ -45,7 +46,8 @@ router.delete("/tickets/:ticketId", verify, Ticket.deleteTicket);
 router.post("/send-email", configController.sendEmail);
 router.get("/check-token" , refreshKickToken.introspectToken)
 router.post("/refresh-token-kick", refreshKickToken.refreshKickToken);
-
+router.get("/search", Song.RequestSong);
+router.get("/getInfo", Song.getInfoVideo);
 async function createPaymentSession( email) {
   const payload = {
     amount: String(5.0 * 100), // تحويل المبلغ إلى وحدة العملة الفرعية (مثال: سنتات)

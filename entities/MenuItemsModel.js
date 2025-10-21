@@ -48,7 +48,12 @@ const MenuItems = new EntitySchema({
       nullable: true,
       name: "PLATFORM_ID",
     },
-  },
+    levels: {
+      type: Number,
+      nullable: true,
+      name: "LEVELS",
+  }
+  }
 });
 
 module.exports = { MenuItems };

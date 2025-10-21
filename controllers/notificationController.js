@@ -27,45 +27,38 @@ const saveNotification = async ({userId,streamId,title,broadcasterName,broadcast
     console.error("❌ Error saving notification to DB:", err.message);
   }
 };
-const stream_Day = async  (stream_id, channel_id, stream_date,platformId)=> {
+const startStream = async  (stream_id, channel_id, stream_date,platformId)=> {
   try {
-    const repo = AppDataSource.getRepository(StreamDays);
 
-    // تحويل التاريخ فقط للجزء الخاص بالتاريخ (YYYY-MM-DD)
     const dateObj = new Date(stream_date);
-    dateObj.setHours(0, 0, 0, 0); // لجعل الوقت منتصف الليل فقط
+    if (isNaN(dateObj.getTime()))
+      throw new Error("stream_date is not a valid date");
+    await AppDataSource.query(
+      `BEGIN start_stream_session(  :channel_id, :stream_date,:streamId,:platformId); END;`,
+      [  channel_id, dateObj,stream_id,platformId]
+    );
 
-    const streamDay = repo.create({
-      streamId: stream_id,
-      channelId: channel_id,
-      streamDate: dateObj,
-      platformId
-    });
-
-    await repo.save(streamDay);
-
-    console.log(`✅ Stream Day saved for ${channel_id}`);
+    console.log(`✅ Stream Stream`);
   } catch (err) {
     console.error("❌ Error saving Stream to DB:", err.message);
   }
 };
-const updateUserStreak = async (user_id, user_name, channel_id, stream_date) => {
+const endStream = async ( channel_id, stream_date) => {
   try {
     if (!stream_date) throw new Error("stream_date is missing or invalid");
 
     const dateObj = new Date(stream_date);
     if (isNaN(dateObj.getTime()))
       throw new Error("stream_date is not a valid date");
-
     // مررها كـ Date مباشرة لـ Oracle
     await AppDataSource.query(
-      `BEGIN update_user_streak(:user_id, :user_name, :channel_id, :stream_date); END;`,
-      [user_id, user_name, channel_id, dateObj]
+      `BEGIN end_stream_session(  :channel_id, :stream_date); END;`,
+      [  channel_id, dateObj]
     );
-
+  console.log(`✅ End Stream`);
   } catch (err) {
     console.error(
-      `❌ خطأ أثناء تحديث الستريك لـ ${user_id}:`,
+      `❌ خطأ أثناء تحديث الستريك لـ :`,
       err.message
     );
   }
@@ -85,4 +78,4 @@ async function getUserColor(userId, apiClient) {
 
 
 
-module.exports ={updateUserStreak,stream_Day,saveNotification,getUserColor}
+module.exports ={startStream,endStream,saveNotification,getUserColor}
