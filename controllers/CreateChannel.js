@@ -86,52 +86,73 @@ const CreateOrUpdateChannel = async (channelData) => {
     }
 
     // 4. user_config (إذا كانت القناة جديدة)
-    if (!existingChannel) {
-      const configRepo = AppDataSource.getRepository(UserConfig);
-      
+const configRepo = AppDataSource.getRepository(UserConfig);
+const SettingsRepo = AppDataSource.getRepository(UserSetting);
 
-      const defaultConfigs = [
-        { configId: 1, status: 1,roleId:5 },
-        { configId: 2, status: 1,roleId:5 },
-        { configId: 3, status: 1,roleId:5 },
-        { configId: 5, status: 1,roleId:5 },
-        { configId: 6, status: 1,roleId:1 },
-        { configId: 7, status: 1,roleId:1 },
-        { configId: 8, status: 1,roleId:1 },
-        { configId: 9, status: 1,roleId:5 },
-        { configId: 10, status: 1,roleId:5 },
-        { configId: 11, status: 1,roleId:5 },
-        { configId: 12, status: 1,roleId:5 },
-        { configId: 13, status: 1,roleId:5 },
-        { configId: 14, status: 1,roleId:5 },
-        { configId: 15, status: 1,roleId:5 },
-        { configId: 16, status: 1,roleId:5 },
-        { configId: 17, status: 1,roleId:5 },
-        { configId: 18, status: 1,roleId:5 },
-        { configId: 19, status: 1,roleId:5 },
-        { configId: 20, status: 1,roleId:5 },
-        { configId: 21, status: 1,roleId:5 },
-      ];
+// ✅ قائمة الإعدادات الافتراضية
+const defaultConfigs = [
+  { configId: 1, status: 1, roleId: 5 },
+  { configId: 2, status: 1, roleId: 5 },
+  { configId: 3, status: 1, roleId: 5 },
+  { configId: 5, status: 1, roleId: 5 },
+  { configId: 6, status: 1, roleId: 1 },
+  { configId: 7, status: 1, roleId: 1 },
+  { configId: 8, status: 1, roleId: 1 },
+  { configId: 9, status: 1, roleId: 5 },
+  { configId: 10, status: 1, roleId: 5 },
+  { configId: 11, status: 1, roleId: 5 },
+  { configId: 12, status: 1, roleId: 5 },
+  { configId: 13, status: 1, roleId: 5 },
+  { configId: 14, status: 1, roleId: 5 },
+  { configId: 15, status: 1, roleId: 5 },
+  { configId: 16, status: 1, roleId: 5 },
+  { configId: 17, status: 1, roleId: 5 },
+  { configId: 18, status: 1, roleId: 5 },
+  { configId: 19, status: 1, roleId: 5 },
+  { configId: 20, status: 1, roleId: 5 },
+  { configId: 21, status: 1, roleId: 5 },
+];
 
-      for (const row of defaultConfigs) {
+// ✅ احضر إعدادات القناة الموجودة
+const existingConfigs = await configRepo.find({
+  where: { channelId: channelData.id },
+});
+
+// لو عدد الموجود أقل من عدد الافتراضي → أضف الناقص فقط
+    if (existingConfigs.length < defaultConfigs.length) {
+      // 🧩 حدد الإعدادات المفقودة فقط
+      const existingIds = existingConfigs.map(c => c.configId);
+
+      const missingConfigs = defaultConfigs.filter(c => !existingIds.includes(c.configId));
+
+      // أضف الناقص فقط
+      for (const row of missingConfigs) {
         await configRepo.save(configRepo.create({
           channelId: channelData.id,
           configId: row.configId,
           status: row.status,
-          roleId:row.roleId,
-          platformId:channelData.platformId
+          roleId: row.roleId,
+          platformId: channelData.platformId,
         }));
       }
-      const SettingsRepo = AppDataSource.getRepository(UserSetting);
+    }
+
+    // ✅ تحقق من الإعدادات في UserSetting
+    const existingSetting = await SettingsRepo.findOne({
+      where: { userId: channelData.id },
+    });
+
+    if (!existingSetting) {
       await SettingsRepo.save(SettingsRepo.create({
         userId: channelData.id,
         isStreaming: 0,
         isBotActive: 0,
         isNotifyActive: 0,
         isSoundNotify: 0,
-          platformId:channelData.platformId
+        platformId: channelData.platformId,
       }));
     }
+
   } catch (err) {
     console.error("❌ Error in CreateOrUpdateChannel:", err);
     throw err;
